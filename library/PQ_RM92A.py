@@ -2,6 +2,7 @@ from machine import UART, Pin
 import time
 
 # 使い方
+# import PQ_RM92A
 # rm92a = RM92A(1, 115200, 8, 9)
 # rm92a.begin()
 # rm92a.send(tx_data)
@@ -106,7 +107,6 @@ class RM92A():
         self.rm.write(b"x\r\n")
         time.sleep(0.1)
         self.rm.write(b"s\r\n")
-
         return 0
 
     def begin(self):
@@ -115,11 +115,9 @@ class RM92A():
         time.sleep(0.1)
         self.rm.write(b"1\r\n")  # ModeはLoRaのみ
         time.sleep(0.1)
-
         self.rm.write(b"y\r\n")
         time.sleep(0.1)
         self.rm.write(b"s\r\n")  # start!!!
-
         return 0
 
     rx_buf = []
@@ -128,7 +126,6 @@ class RM92A():
             while self.rm.any()>0:
                 data = self.rm.read(1)   # 一文字ずつ読む
                 self.rx_buf[rx_write_p] = data
-
                 if data == "\n":
                     rx_write_p = 0
                     rx_read_lock = True
@@ -147,11 +144,8 @@ class RM92A():
         tx_buf[2] = size
         tx_buf[3] = bin((dst >> 8) & 0xff)
         tx_buf[4] = bin((dst >> 0) & 0xff)
-
         for i in range(size-1):
             tx_buf[i+5] = tx_data[i]
-        
         tx_buf[size+5] = 0xAA
-
         self.rm.write(tx_buf)
         return 0
