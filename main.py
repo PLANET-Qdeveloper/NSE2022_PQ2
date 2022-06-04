@@ -1,78 +1,235 @@
-from pyrsistent import v
-from machine import Pin, I2C, SPI, Timer
-from microGPS import MicroGPS
-import os, sdcard, utime
+from turtle import down
+from machine import Pin, UART, I2C, IDLE, reset, Timer
+from rp2 import PIO
+from utime import ticks_ms, sleep_ms
 
-import PQ_RM92A
 import PQ_LPS22HB
+import PQ_RM92A
+import PQ_GPS
 
-phase = ['SAFETY', 'READY', 'FLIGHT', 'SEP', 'RECOVERY']
 
-gps_uart = UART(1, baudrate=115200, tx=Pin(8), rx=Pin(9))
+# インスタンス生成
 rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
+gps_uart = UART(1, baudrate=115200, tx=Pin(), rx=Pin())
+
+rm = PQ_RM92A.RM92A(rm_uart)
+gps = PQ_GPS.GPS(gps_uart) # rx, tx, baudrate
+
+i2c = I2C(0, scl=Pin(1), sda=Pin(0), freq=100)
+
+lps = PQ_LPS22HB.LPS22HB(i2c)
 
 
-# GPS
-#______________________________________________________________________
-TIMEZONE = 9
-gps = MicroGPS(TIMEZONE)
-#______________________________________________________________________
+
+# bool型変数
+burning = False
+detect_peak = False
+launched = False
+landed = False
+apogee = False
+flight_pin = Pin(0, Pin.IN)
+sep_pin = Pin(0, Pin.OUT)
+
+# Timerオブジェクト(周期処理)
+peak_detection_timer = Timer()
+read_timer = Timer()
+downlink_timer = Timer()
 
 
-# I2C
-#______________________________________________________________________
-i2c = I2C(0, scl=Pin(9), sda=Pin(8))
-#______________________________________________________________________
+# int型変数
+phase = 0
+mission_time_int = 0
+mission_timer_reset = 0
+detection_count = 0
 
-# SD card
-#______________________________________________________________________
-cs = Pin(9, Pin.OUT)
-spi = SPI(1, baudrate=1000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
-sd = sdcard.SDCard(spi, cs)
-os.mount(sd, '/sd')
-#______________________________________________________________________
+# float型変数
+init_mission_time = ticks_ms()
+mission_time = 0
+flight_time = 0
+ground_press = 0
+press_buf = [10]
+lat = 0.0  # 緯度[°]
+lon = 0.0  # 経度[°]
+press_prev_LPF = 0
+press_LPF = 0
+temperature = 0
+
+T_BURN = 3.3
+T_SEP = 12.2
+T_HEATING = 5.0
+
+coef = 0.01
 
 
-#ピン設定-------------------------------------------------------------
-flight_pin = 27
-sep = 18
-#---------------------------------------------------------------------
+# 受け取ったコマンドを処理するためのhandler関数
+def command_handler():
+    #readlineをココで書く？
+    command = rm_uart.read(1)
+    if command == 0xB0:     # READY->SAFETY
+        if phase == 1: phase = 0
+    elif command == 0xB1:   # SAFETY->READY
+        if phase == 0: phase = 1
+    elif command == 0xB2:   # READY->FLIGHT
+        if phase == 1: phase = 2
+    elif command == 0xB3:   # SEP
+        if (burning == False & phase == 2): phase = 3
+    elif command == 0xB4:   # EMERGENCY
+        if (phase >= 1 & phase <= 3): phase = 5
+    elif command == 0xB5:   # RESET
+        reset()
+    return 0
+# 割り込み対応開始
+rm_uart.irq(UART.RX_ANY, priority=1, handler=command_handler, wake=IDLE)
+
 
 def read():
-    mission_time = ticks_ms()
+    mission_time = ticks_ms() - init_mission_time
+    if mission_time > 3600:
+        mission_time = 0
+        mission_time_reset = mission_time_reset + 1
 
-    # GPS-------------------------------------------------------------
-    # タプルで返されるから一行の文字列に変換. (37, 51.65, 'S') → 3751.65S
-    lat     = ''.join(gps.latitude)    
-    lon     = ''.join(gps.longitude)
-    alt     = gps.altitude
-    sat     = gps.sat
-    fix     = gps.hdop
-    geoid   = gps.geoid_height
-    timestamp = '.'.join(gps.timestamp)
-    #-----------------------------------------------------------------
+    if not launched:
+        ground_press = lps.getPressure()
+        press_buf = [ground_press]*10 
+    
+    press_LPF, press_prev_LPF = smoothing(lps.getPressure(), press_prev_LPF)
+    temperature = lps.getTemperature()
+    
+    lat = gps.getLat()
+    lon = gps.getLon()
 
+    return mission_time, ground_press, press_LPF, press_prev_LPF, temperature, lat, lon
 
-    # LPS22HB---------------------------------------------------------
+def smoothing(raw_press, press_prev_LPF):
+    global press_buf
+    press_buf[i] = raw_press
+    i = i+1
+    if i == 9:
+        for i in range(9):
+            for j in range(9):
+                if press_buf[j-1] > buf[j]:
+                    temp = press_buf[j]
+                    press_buf[j] = press_buf[j-1]
+                    press_buf[j-1] = temp
+        press_median = (press_buf[4]+press_buf[5])/2
+        press_prev_LPF = press_LPF
+        press_LPF = press_median*coef + press_prev_LPF*(1-coef)
+    return press_LPF, press_prev_LPF
 
+def peak_detection():
+    global apogee
+    global press_LPF
+    global press_prev_LPF
+    global detection_count
+    if press_prev_LPF < press_LPF: detection_count+=1
+    else: detection_count=0
+    if detection_count == 5: apogee = True
+    return
 
+def downlink():
+    mission_time_int = int(mission_time)
+    mission_time_bits_A = mission_time_int >> 8 & 0xff
+    mission_time_bits_B = mission_time_int >> 0 & 0xff
 
+    flight_time_int = int(flight_time)
+    flight_time_bits_A = flight_time_int >> 8 & 0xff
+    flight_time_bits_B = flight_time_int >> 0 & 0xff
 
+    press_int = int(press_LPF*100)   # 下2桁までを繰り上げして型変換
+    press_bits_A = press_int >> 16 & 0xff
+    press_bits_B = press_int >> 8  & 0xff
+    press_bits_C = press_int >> 0  & 0xff
 
+    temp_int = int(temperature)
+    temp_bits = temp_int >> 0 & 0xff
 
+    lat_int = int(lat*10000) # 下4桁までを繰り上げ
+    lat_bits_A = lat_int >> 16 & 0xff 
+    lat_bits_B = lat_int >> 8  & 0xff
+    lat_bits_C = lat_int >> 0  & 0xff
+    lon_int = int(lon*10000)
+    lon_bits_A = lon_int >> 16 & 0xff 
+    lon_bits_B = lon_int >> 8  & 0xff
+    lon_bits_C = lon_int >> 0  & 0xff
+    
+    send_data = [0]*50
+    send_data[] = mission_time_bits_A
+    send_data[] = mission_time_bits_B
+    send_data[] = mission_timer_reset
+    send_data[] = flight_time_bits_A
+    send_data[] = flight_time_bits_B
+    send_data[] = phase
+    send_data[] = launched
+    send_data[] = landed
+    #send_data[] = relay.value()
+    send_data[] = sep_pin.value()
+    send_data[] = apogee
+    send_data[] = press_bits_A
+    send_data[] = press_bits_B
+    send_data[] = press_bits_C
+    send_data[] = temp_bits
+    send_data[] = lat_bits_A
+    send_data[] = lat_bits_B
+    send_data[] = lat_bits_C
+    send_data[] = lon_bits_A
+    send_data[] = lon_bits_B
+    send_data[] = lon_bits_C
+    send_data[] = alt_bits_A
+    send_data[] = alt_bits_B
+    #send_data[] = 
 
+    rm.send(0x1234, send_data, 50)
+    return
 
-def record():
-    file = open('/sd/HybridRocketProject_PQ2_'+file_number+'.csv', 'w')
-    if(file):
-        file.write(str(mission_time), str(flight_time), phase,)
-        file.write(flight_pin.value(), sep.value(), apogee.value(), landed.value())
-        file.write(str(lat), str(lon), str(sat), str(fix), str(hdop), str(alt), str(geoid))
-        file.write(str(press), str(press_LPF), str(temperature))
-        file.write('\r\n')
+downlink_timer.init(period=1000, callback=downlink)
 
+def get_gps():
+    lat = gps.getLat()
+    lon = gps.getLon()
+    return lat, lon
 
-# 10ms周期で定期的に実行
-read_ticker = Timer(period=10, mode=Timer.PERIODIC, callback=read)
-record_ticker = Timer(period=10, callback=record)
+def main():
+    while True:
+        if phase == 0:  # SAFETYモード
+            break
+        elif phase == 1:    # READYモード
+            if flight_pin.value() == 1:
+                launched = True
+                flight_time_start = ticks_ms()
+                phase = 2
+        elif phase == 2:    # FLIGHTモード
+            if (ticks_ms() - flight_time_start) > T_BURN:
+                if burning == True:
+                    burning = False
+                    peak_detection_timer.init(period=100, callback=peak_detection)
+            if (not burning) and (apogee or ((ticks_ms() - flight_time_start) > T_SEP)):
+                phase = 3
+        elif phase == 3:
+            peak_detection_timer.deinit()
+            sep_pin.value(1)
+            if not separated:
+                sep_time_start = ticks_ms()
+                separated = True
+            if (ticks_ms() - sep_time) > T_HEATING:
+                sep_pin.value(0)
+                phase = 4
+        elif phase == 4:   # RECOVERY
+            global lat
+            global lon
+            read_timer.denit()
+            lat, lon = get_gps()
+            sleep_ms(1000)
+            if not landed:
+                if (press_LPF > ground_press) or (ticks_ms() > flight_time_start):
+                    #relay = 0
+                    landed = True
+        else:   # EMERGENCY
+            sep_pin.value(0)
+            break
+    return
 
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("中断しました")
