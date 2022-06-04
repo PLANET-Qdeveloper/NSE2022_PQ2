@@ -8,8 +8,9 @@ import time
 # rm92a.send(tx_data)
 
 class RM92A():
-    def __init__(self, uart_num, baudrate, tx_pin, rx_pin):   # コンストラクタの宣言
-        self.rm = UART(uart_num, baudrate, Pin(tx_pin), Pin(rx_pin))    # self要る？
+    def __init__(self, rm_uart):   # コンストラクタの宣言
+        self.rm = rm_uart
+        #self.cmd_buf = bytearray(6)
 
     def set_and_begin(self, ch, panid, dst, unit_mode, power, bw, factor, dt_mode):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
@@ -137,15 +138,17 @@ class RM92A():
     def readData(self):
         return 0
 
+    # Pico -> RM92 >>>>
     def send(self, dst, tx_data, size):
-        tx_buf = [size+6]
+        tx_buf = [0]*(size+6)
         tx_buf[0] = "@"
         tx_buf[1] = "@"
-        tx_buf[2] = size
+        tx_buf[2] = "{}".format(size)
         tx_buf[3] = bin((dst >> 8) & 0xff)
         tx_buf[4] = bin((dst >> 0) & 0xff)
-        for i in range(size-1):
-            tx_buf[i+5] = tx_data[i]
-        tx_buf[size+5] = 0xAA
-        self.rm.write(tx_buf)
-        return 0
+        for i in range(size):
+            tx_buf[i+5] = "{}".format(tx_data[i])
+        tx_buf[size+5] = "{}".format(0xAA)
+        for i in range(size+6):
+            self.rm.write(tx_buf[i])
+            print(tx_buf[i])
