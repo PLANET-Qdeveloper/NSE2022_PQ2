@@ -24,7 +24,7 @@ class RM92A():
         #-----------
         self.rm.write(b"a\r\n")
         time.sleep(0.1)
-        self.rm.write(ch+"\r\n")
+        self.rm.write("{}\r\n".format(ch))
         time.sleep(0.1)
 
         #-----------
@@ -34,7 +34,7 @@ class RM92A():
         time.sleep(0.1)
         self.rm.write(b"1\r\n")
         time.sleep(0.1)
-        self.rm.write(panid+"\r\n")
+        self.rm.write("{}\r\n".format(panid))
         time.sleep(0.1)
 
         #-----------
@@ -42,15 +42,15 @@ class RM92A():
         #-----------
         self.rm.write(b"d\r\n")
         time.sleep(0.1)
-        self.rm.write(dst+"\r\n")
+        self.rm.write("{}\r\n".format(dst))
         time.sleep(0.1)
         
         #-----------
-        # set unit-mode
+        # set unit-mode 0:parent, 1:child
         #-----------
         self.rm.write(b"e\r\n")
         time.sleep(0.1)
-        self.rm.write(unit_mode+"\r\n")
+        self.rm.write("{}\r\n".format(unit_mode))
         time.sleep(0.1)
 
         #-----------
@@ -60,21 +60,21 @@ class RM92A():
         time.sleep(0.1)
         self.rm.write(b"1\r\n")
         time.sleep(0.1)
-        self.rm.write(power+"\r\n")
+        self.rm.write("{}\r\n".format(power))
         time.sleep(0.1)
 
         self.rm.write(b"g\r\n")
         time.sleep(0.1)
         self.rm.write(b"2\r\n")
         time.sleep(0.1)
-        self.rm.write(bw+"\r\n")
+        self.rm.write("{}\r\n".format(bw))
         time.sleep(0.1)
 
         self.rm.write(b"g\r\n")
         time.sleep(0.1)
         self.rm.write(b"3\r\n")
         time.sleep(0.1)
-        self.rm.write(factor+"\r\n")
+        self.rm.write("{}\r\n".format(factor))
         time.sleep(0.1)
 
         #-----------
@@ -82,7 +82,7 @@ class RM92A():
         #-----------
         self.rm.write(b"i\r\n")
         time.sleep(0.1)
-        self.rm.write(dt_mode+"\r\n")
+        self.rm.write("{}\r\n".format(dt_mode))
         time.sleep(0.1)
 
         #-----------
@@ -108,7 +108,8 @@ class RM92A():
         self.rm.write(b"x\r\n")
         time.sleep(0.1)
         self.rm.write(b"s\r\n")
-        return 0
+        print("complite")
+        return
 
     def begin(self):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
