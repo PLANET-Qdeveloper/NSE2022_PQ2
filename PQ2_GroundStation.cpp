@@ -4,7 +4,7 @@
 Serial pc(USBTX, USBRX, 115200);
 Serial rm_serial(D1, D0, 115200);
 
-RM92A rm(rm_serial);
+RM92 rm(rm_serial);
 
 void downlink_handler(char* data);
 
@@ -28,7 +28,7 @@ int main(){
         if(pc.readable()){
             char cmd[1];
             cmd[0] = pc.getc();
-            rm.send(0x1234, cmd, 1);
+            rm.send_cmd(0x1234, cmd);
             pc.printf("send:\t%x\r\n", cmd[0]);
         }
     }
@@ -70,7 +70,7 @@ void downlink_handler(char* data){
     press100 = int(data[13] << 16) | (data[14] << 8) | (data[15] << 0);
     temperature = int(data[16]);
 
-    mission_time = mission_time_bits + 60*60*mission_timer_reset
+    mission_time = mission_time_bits + 60*60*mission_timer_reset;
     
     pc.printf(" PLANET-Q GROUND STATION\r\n");
     pc.printf(" commands:\r\n"); 
@@ -82,7 +82,7 @@ void downlink_handler(char* data){
     pc.printf(" 5   : RECOVERY\r\n");
     pc.printf(" DEL : SYSTEM RESET\r\n");
     pc.printf("\r\n");
-    pc.printf(" mission time:\t%d", mission_time);
+    pc.printf(" mission time:\t%d[ms]", mission_time);
     pc.printf(" flight time:\t%d[ms]\r\n", flight_time);
     pc.printf(" phase:\t%d\r\n", phase);
     pc.printf("\r\n");
@@ -90,6 +90,6 @@ void downlink_handler(char* data){
     pc.printf(" lon:\t\t%.6f\r\n", lon10000/10000);
     pc.printf("\r\n");
     pc.printf(" press:\t\t%.2f[hPa]\r\n", press100/100);
-    pc.printf(" temp:\t\t%.2f[C]\r\n", temperature);
+    pc.printf(" temperature:\t\t%.2f[C]\r\n", temperature);
     pc.printf("\r\n");
 }
