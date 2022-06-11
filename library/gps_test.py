@@ -1,5 +1,4 @@
 from machine import Pin, UART, lightsleep
-import _thread
 
 from micropyGPS import MicropyGPS
 
@@ -39,7 +38,9 @@ def get_gps():
     gpsTime = '{:02d}:{:02d}:{:02}'.format(t[0], t[1], t[2])
     gpsdate = my_gps.date_string('long')
     
-get_gps()
-# Noneってでるかも
-print('Lat:', latitude)
-print('Lng:', longitude)
+while True:
+    get_gps()
+    # 最初Noneってでるかも
+    print('Lat:', latitude)
+    print('Lng:', longitude)
+    lightsleep(1000)
