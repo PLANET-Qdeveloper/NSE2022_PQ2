@@ -12,17 +12,17 @@ class RM92A():
         self.rm = rm_uart
         #self.cmd_buf = bytearray(6)
 
-    def set_and_begin(self, ch, panid, dst, unit_mode, power, bw, factor, dt_mode):
+    def set_and_begin(self, ch, ownid, panid, dst, unit_mode, power, bw, factor, dt_mode):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
-        self.rm.write(b"\r\n")
+        self.rm.write("\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")  # ModeはLoRaのみ
+        self.rm.write("1\r\n")  # ModeはLoRaのみ
         time.sleep(0.1)
 
         #-----------
         # set CH
         #-----------
-        self.rm.write(b"a\r\n")
+        self.rm.write("a\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(ch))
         time.sleep(0.1)
@@ -30,17 +30,29 @@ class RM92A():
         #-----------
         # set PANID
         #-----------
-        self.rm.write(b"b\r\n")
+        self.rm.write("b\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")
+        self.rm.write("1\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(panid))
+        time.sleep(0.1)
+        self.rm.write("0\r\n")
+        time.sleep(0.1)
+
+        #-----------
+        # set OWNID
+        #-----------
+        self.rm.write("c\r\n")
+        time.sleep(0.1)
+        self.rm.write("1\r\n")
+        time.sleep(0.1)
+        self.rm.write("{}\r\n".format(ownid))
         time.sleep(0.1)
 
         #-----------
         # set Dst. 0xFFFFのときは全ノードへ一斉送信.
         #-----------
-        self.rm.write(b"d\r\n")
+        self.rm.write("d\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(dst))
         time.sleep(0.1)
@@ -48,7 +60,7 @@ class RM92A():
         #-----------
         # set unit-mode 0:parent, 1:child
         #-----------
-        self.rm.write(b"e\r\n")
+        self.rm.write("e\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(unit_mode))
         time.sleep(0.1)
@@ -56,23 +68,23 @@ class RM92A():
         #-----------
         # set TX-Power, BandWidth and Factor
         #-----------
-        self.rm.write(b"g\r\n")
+        self.rm.write("g\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")
+        self.rm.write("1\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(power))
         time.sleep(0.1)
 
-        self.rm.write(b"g\r\n")
+        self.rm.write("g\r\n")
         time.sleep(0.1)
-        self.rm.write(b"2\r\n")
+        self.rm.write("2\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(bw))
         time.sleep(0.1)
 
-        self.rm.write(b"g\r\n")
+        self.rm.write("g\r\n")
         time.sleep(0.1)
-        self.rm.write(b"3\r\n")
+        self.rm.write("3\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(factor))
         time.sleep(0.1)
@@ -80,7 +92,7 @@ class RM92A():
         #-----------
         # set dt mode
         #-----------
-        self.rm.write(b"i\r\n")
+        self.rm.write("i\r\n")
         time.sleep(0.1)
         self.rm.write("{}\r\n".format(dt_mode))
         time.sleep(0.1)
@@ -88,38 +100,38 @@ class RM92A():
         #-----------
         # set output.
         #-----------
-        self.rm.write(b"l\r\n")
+        self.rm.write("l\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")
+        self.rm.write("1\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")  # RSSI disable
+        self.rm.write("1\r\n")  # RSSI disable
         time.sleep(0.1)
 
-        self.rm.write(b"l\r\n")
+        self.rm.write("l\r\n")
         time.sleep(0.1)
-        self.rm.write(b"2\r\n")
+        self.rm.write("2\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")   # Transfer Adress disable
+        self.rm.write("1\r\n")   # Transfer Adress disable
         time.sleep(0.1)
 
         #-------------
         # save settings and start
         #-------------
-        self.rm.write(b"x\r\n")
-        time.sleep(0.1)
-        self.rm.write(b"s\r\n")
-        print("complite")
+        self.rm.write("x\r\n")
+        time.sleep(0.5)
+        self.rm.write("s\r\n")
+        print("start!!!")
         return
 
     def begin(self):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
-        self.rm.write(b"\r\n")
+        self.rm.write("\r\n")
         time.sleep(0.1)
-        self.rm.write(b"1\r\n")  # ModeはLoRaのみ
+        self.rm.write("1\r\n")  # ModeはLoRaのみ
         time.sleep(0.1)
-        self.rm.write(b"y\r\n")
+        self.rm.write("y\r\n")
         time.sleep(0.1)
-        self.rm.write(b"s\r\n")  # start!!!
+        self.rm.write("s\r\n")  # start!!!
         return 0
 
     rx_buf = []
@@ -152,4 +164,5 @@ class RM92A():
         tx_buf[size+5] = "{}".format(0xAA)
         for i in range(size+6):
             self.rm.write(tx_buf[i])
-            print(tx_buf[i])
+            #print(tx_buf[i])
+
