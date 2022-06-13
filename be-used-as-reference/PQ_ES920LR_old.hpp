@@ -5,9 +5,9 @@
 *   データ形式はbinaryです。asciiには未対応です。
 *   設定の変更はあらかじめ行うという形式です。
 */
- 
+
 #include "mbed.h"
- 
+
 const int ES920LR_BUFF_SIZE = 70;
 const int ES920LR_FUNC_NUMBER = 256;
 const int ES920LR_DATA_INTERVAL = 10000;//[us]
@@ -15,10 +15,8 @@ const int ES920LR_DATA_INTERVAL = 10000;//[us]
 /**
 @brief 920MHz帯無線機ES920LRを簡単に使えるクラス
 */
- 
- 
+
 class ES920LR {
- 
 public:
     
     typedef enum END_COMMAND {
@@ -221,7 +219,7 @@ public:
         sendIndex = 1;
         memset(sendBuff, '\0', 52);
     }
- 
+
     //送信バッファに追加
     void Write(char arg) {
         if (sendIndex < 51) {//気持ち悪いが、index==51が最大
@@ -563,7 +561,7 @@ ES920LR& operator<<(ES920LR& es, const unsigned int& arg) {
     es.Write(arg);
     return es;
 }
- 
+
 ES920LR& operator<<(ES920LR& es, const long& arg) {
     es.Write(arg);
     return es;
@@ -572,7 +570,7 @@ ES920LR& operator<<(ES920LR& es, const float& arg) {
     es.Write(arg);
     return es;
 }
- 
+
 ES920LR& operator<<(ES920LR& es, const double& arg) {
     es.Write(arg);
     return es;
