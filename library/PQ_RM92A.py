@@ -13,7 +13,20 @@ class RM92A():
         self.rm = rm_uart
         self.rx_buf = [0]*(rx_data_size+6)
         #self.cmd_buf = bytearray(6)
-
+    
+    # -------------------------------------------------------------
+    # コンフィギュレーションを設定してから起動する. 普通はこっち.
+    # -------------------------------------------------------------
+    # ch:チャンネル(24-61)
+    # ownid:自身のアドレス. ex) 0x1234
+    # panid:PNAネットワークアドレス ex) 0x0001
+    # dst:送信先のアドレス. ex) 0xFFFF
+    # unit_mode:0:parent, 1:child
+    # power:TX-Power(0-13dBm)
+    # bw:BandWidth(0:125kHz, 1:250kHz, 2:500kHz)
+    # factor:Factor(0-6)
+    # dt_mode:0:Discharge, 1:Frame, 2:TimerSend, 9:AT-Command Mode
+    # -------------------------------------------------------------
     def set_and_begin(self, ch, ownid, panid, dst, unit_mode, power, bw, factor, dt_mode):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
         self.rm.write("\r\n")
