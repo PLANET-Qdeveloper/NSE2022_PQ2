@@ -133,7 +133,7 @@ class RM92A():
         # save settings and start
         #-------------
         self.rm.write("x")
-        time.sleep(0.5)
+        time.sleep(2)
         self.rm.write("s")
         print("start!!!")
         return
