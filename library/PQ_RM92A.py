@@ -1,3 +1,4 @@
+from math import fabs
 from machine import UART, Pin
 import time
 
@@ -8,8 +9,9 @@ import time
 # rm92a.send(tx_data)
 
 class RM92A():
-    def __init__(self, rm_uart):   # コンストラクタの宣言
+    def __init__(self, rm_uart, read_size):   # コンストラクタの宣言
         self.rm = rm_uart
+        self.rx_buf = [0]*read_size
         #self.cmd_buf = bytearray(6)
 
     def set_and_begin(self, ch, ownid, panid, dst, unit_mode, power, bw, factor, dt_mode):
@@ -134,7 +136,7 @@ class RM92A():
         self.rm.write("s\r\n")  # start!!!
         return 0
 
-    rx_buf = []
+    # 一文字読む．"\n"に達したらlockする．
     def rx_update(self):
         if rx_read_lock == False:
             while self.rm.any()>0:
@@ -148,8 +150,14 @@ class RM92A():
                     rx_write_p =+ 1
         return rx_read_lock
 
+    # 可能な限り回す関数．
     def readData(self):
-        return 0
+        lock = self.rx_update()
+        if lock:
+            self.rx_read_lock = False
+            return self.rx_buf
+        else:   # データが溜まってないのでスルー
+            pass
 
     # Pico -> RM92 >>>>
     def send(self, dst, tx_data, size):
