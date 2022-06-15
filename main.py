@@ -1,6 +1,4 @@
-from turtle import down
-from machine import Pin, UART, I2C, IDLE, reset, Timer
-from rp2 import PIO
+from machine import Pin, UART, I2C, reset, Timer
 from utime import ticks_ms, sleep_ms
 
 import PQ_LPS22HB
