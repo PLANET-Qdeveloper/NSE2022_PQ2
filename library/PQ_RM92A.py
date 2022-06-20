@@ -12,6 +12,8 @@ class RM92A():
     def __init__(self, rm_uart, rx_data_size):   # コンストラクタの宣言
         self.rm = rm_uart
         self.rx_buf = [0]*(rx_data_size+6)
+        self.rx_read_lock = False
+        self.rx_write_p = 0
         #self.cmd_buf = bytearray(6)
     
     # -------------------------------------------------------------
@@ -29,9 +31,11 @@ class RM92A():
     # -------------------------------------------------------------
     def set_and_begin(self, ch, ownid, panid, dst, unit_mode, power, bw, factor, dt_mode):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
-        self.rm.write("\r\n")
-        time.sleep(0.5)
-        self.rm.write("1\r\n")  # ModeはLoRaのみ
+        self.rm.write("\n")
+        time.sleep(0.1)
+        self.rm.write("1")  # ModeはLoRaのみ
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -39,7 +43,9 @@ class RM92A():
         #-----------
         self.rm.write("a")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(ch))
+        self.rm.write("{}".format(ch))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -47,11 +53,17 @@ class RM92A():
         #-----------
         self.rm.write("b")
         time.sleep(0.1)
-        self.rm.write("1\r\n")
+        self.rm.write("1")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(panid))
+        self.rm.write("\n")
         time.sleep(0.1)
-        self.rm.write("0\r\n")
+        self.rm.write("{}".format(panid))
+        time.sleep(0.1)
+        self.rm.write("\n")
+        time.sleep(0.1)
+        self.rm.write("0")  #Extend PANIDは使わない
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -59,9 +71,13 @@ class RM92A():
         #-----------
         self.rm.write("c")
         time.sleep(0.1)
-        self.rm.write("1\r\n")
+        self.rm.write("1")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(ownid))
+        self.rm.write("\n")
+        time.sleep(0.1)
+        self.rm.write("{}".format(ownid))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -69,7 +85,9 @@ class RM92A():
         #-----------
         self.rm.write("d")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(dst))
+        self.rm.write("{}".format(dst))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
         
         #-----------
@@ -77,7 +95,9 @@ class RM92A():
         #-----------
         self.rm.write("e")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(unit_mode))
+        self.rm.write("{}".format(unit_mode))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -85,23 +105,34 @@ class RM92A():
         #-----------
         self.rm.write("g")
         time.sleep(0.1)
-        self.rm.write("1\r\n")
+        self.rm.write("1")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(power))
+        self.rm.write("\n")
         time.sleep(0.1)
-
-        self.rm.write("g")
+        self.rm.write("{}".format(power))
         time.sleep(0.1)
-        self.rm.write("2\r\n")
-        time.sleep(0.1)
-        self.rm.write("{}\r\n".format(bw))
+        self.rm.write("\n")
         time.sleep(0.1)
 
         self.rm.write("g")
         time.sleep(0.1)
-        self.rm.write("3\r\n")
+        self.rm.write("2")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(factor))
+        self.rm.write("\n")
+        time.sleep(0.1)
+        self.rm.write("{}".format(bw))
+        time.sleep(0.1)
+        self.rm.write("\n")
+        time.sleep(0.1)
+
+        self.rm.write("g")
+        time.sleep(0.1)
+        self.rm.write("3")
+        time.sleep(0.1)
+        self.rm.write("\n")
+        self.rm.write("{}".format(factor))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -109,7 +140,9 @@ class RM92A():
         #-----------
         self.rm.write("i")
         time.sleep(0.1)
-        self.rm.write("{}\r\n".format(dt_mode))
+        self.rm.write("{}".format(dt_mode))
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         #-----------
@@ -117,26 +150,33 @@ class RM92A():
         #-----------
         self.rm.write("l")
         time.sleep(0.1)
-        self.rm.write("1\r\n")
+        self.rm.write("1")
         time.sleep(0.1)
-        self.rm.write("1\r\n")  # RSSI disable
+        self.rm.write("\n")
+        time.sleep(0.1)
+        self.rm.write("1")  # RSSI disable
+        time.sleep(0.1)
+        self.rm.write("\n")
         time.sleep(0.1)
 
         self.rm.write("l")
         time.sleep(0.1)
-        self.rm.write("2\r\n")
+        self.rm.write("2")
         time.sleep(0.1)
-        self.rm.write("1\r\n")   # Transfer Adress disable
+        self.rm.write("\n")
         time.sleep(0.1)
-
+        self.rm.write("1")   # Transfer Adress disable
+        time.sleep(0.1)
+        self.rm.write("\n")
+        time.sleep(0.1)
         #-------------
         # save settings and start
         #-------------
         self.rm.write("x")
-        time.sleep(2)
+        time.sleep(0.5)
         self.rm.write("s")
         print("start!!!")
-        return
+        return 0
 
     def begin(self):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
@@ -151,17 +191,17 @@ class RM92A():
 
     # 一文字読む．"\n"に達したらlockする．
     def rx_update(self):
-        if rx_read_lock == False:
+        if self.rx_read_lock == False:
             while self.rm.any()>0:
                 data = self.rm.read(1)   # 一文字ずつ読む
-                self.rx_buf[rx_write_p] = data
+                self.rx_buf[self.rx_write_p] = data
                 if data == "\n":
-                    rx_write_p = 0
-                    rx_read_lock = True
+                    self.rx_write_p = 0
+                    self.rx_read_lock = True
                     break
                 else:
-                    rx_write_p =+ 1
-        return rx_read_lock
+                    self.rx_write_p =+ 1
+        return self.rx_read_lock
 
     # 可能な限り回す関数．
     def readData(self):
@@ -175,15 +215,13 @@ class RM92A():
     # Pico -> RM92 >>>>
     def send(self, dst, tx_data, size):
         tx_buf = [0]*(size+6)
-        tx_buf[0] = "@"
-        tx_buf[1] = "@"
-        tx_buf[2] = "{}".format(size)
-        tx_buf[3] = bin((dst >> 8) & 0xff)
-        tx_buf[4] = bin((dst >> 0) & 0xff)
+        tx_buf[0] = int('0x40')     # '@'
+        tx_buf[1] = int('0x40')     # '@'    
+        tx_buf[2] = size
+        tx_buf[3] = int((dst >> 8) & 0xff)
+        tx_buf[4] = int((dst >> 0) & 0xff)
         for i in range(size):
-            tx_buf[i+5] = "{}".format(tx_data[i])
-        tx_buf[size+5] = "{}".format(0xAA)
-        for i in range(size+6):
-            self.rm.write(tx_buf[i])
-            #print(tx_buf[i])
-
+            tx_buf[i+5] = int(tx_data[i])
+        tx_buf[size+5] = int('0xAA')
+        self.rm.write(bytearray(tx_buf))
+        return 0
