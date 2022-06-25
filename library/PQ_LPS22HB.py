@@ -2,7 +2,8 @@ from machine import I2C
 import utime
 
 # LPS22HBのアドレスはGND接続でお願い
-LPS_I2C_ADDR = 0x5c
+LPS_I2C_ADDR_LOW = 0x5C
+LPS_I2C_ADDR_HIGH = 0x5D
 
 # LPS22HBのレジスタ
 LPS_INT_CFG = 0x0B  # Interrupt register
@@ -31,33 +32,38 @@ LPS_RES = 0x33  # Filter reset register
 
 class LPS22HB:
 
-    def __init__(self, i2c):
-        self.address = LPS_I2C_ADDR
+    def __init__(self, i2c, AD0):
+        if AD0 == 0:
+            self.address = LPS_I2C_ADDR_LOW
+        elif AD0 == 1:
+            self.address = LPS_I2C_ADDR_HIGH
+        else:
+            print('AD0の値が正しく有りません.HIGHの場合1,LOWの場合0です.')
         if i2c is None:
             raise ValueError('An I2C object is required.')
         self.i2c = i2c
         buf = bytearray(1)
         buf[0] = 0x40
         # 出力データのレート(ODR)を50Hzに設定(p36参照)
-        self.i2c.writeto(0x10, buf)    
+        self.i2c.writeto_mem(self.address, LPS_CTRL_REG1, buf)    
 
-    # LPS22HBが正常に起動しているかチェックする関数
+    # LPS22HBが正常に起動しているかチェックする関数.戻り値Trueだと正常.
     def test(self):
-        buf = [1]
-        self.i2c.readfrom_into(LPS_WHO_AM_I, buf)
+        buf = bytearray(1)
+        self.i2c.readfrom_mem_into(self.address, LPS_WHO_AM_I, buf)
         if buf == 0xB1:
             return True
         else:
             return False
     
     def read_pressure(self):
-        buf = [3]
-        if (self.i2c.readfrom(LPS_STATUS, 1) & 0x01) == 0x01:  # Pressure data available(p44参照)
-            buf[0] = self.readfrom(LPS_PRESS_OUT_XL)
-            buf[1] = self.readfrom(LPS_PRESS_OUT_L)
-            buf[2] = self.readfrom(LPS_PRESS_OUT_H)
-            PRESS_DATA = ((buf[2] << 16)+(buf[1] << 8)+buf[0])/4096.0
-        pressure = PRESS_DATA
+        status = self.i2c.readfrom_mem(self.address, LPS_STATUS, 1)
+        if (status[0] & 0x01) == 0x01:  # Pressure data available(p44参照)
+            bytes_xl = self.readfrom_mem(self.address, LPS_PRESS_OUT_XL)
+            bytes_l = self.readfrom_mem(self.address, LPS_PRESS_OUT_L)
+            bytes_H = self.readfrom_mem(self.address, LPS_PRESS_OUT_H)
+            PRESS_DATA = ((bytes_xl[0] << 16)+(bytes_l << 8)+bytes_H)/4096.0
+        pressure = PRESS_DATA   #わざわざこうする必要ある？
         return pressure
 
     def read_temperature(self):
