@@ -1,9 +1,11 @@
 from machine import I2C
 import utime
+import sys
 
-# LPS22HBのアドレスはGND接続でお願い
-LPS_I2C_ADDR_LOW = 0x5C
-LPS_I2C_ADDR_HIGH = 0x5D
+# LPS22HBのアドレス設定(AD0ピン)はGND接続でお願い
+LPS_I2C_ADDR = 0x5C
+# もしAD0が+Vに接続しているときはコッチ
+# LPS_I2C_ADDR = 0x5D
 
 # LPS22HBのレジスタ
 LPS_INT_CFG = 0x0B  # Interrupt register
@@ -32,13 +34,8 @@ LPS_RES = 0x33  # Filter reset register
 
 class LPS22HB:
 
-    def __init__(self, i2c, AD0):
-        if AD0 == 0:
-            self.address = LPS_I2C_ADDR_LOW
-        elif AD0 == 1:
-            self.address = LPS_I2C_ADDR_HIGH
-        else:
-            print('AD0の値が正しく有りません.HIGHの場合1,LOWの場合0です.')
+    def __init__(self, i2c):
+        self.address = LPS_I2C_ADDR
         if i2c is None:
             raise ValueError('An I2C object is required.')
         self.i2c = i2c
@@ -47,7 +44,7 @@ class LPS22HB:
         # 出力データのレート(ODR)を50Hzに設定(p36参照)
         self.i2c.writeto_mem(self.address, LPS_CTRL_REG1, buf)    
 
-    # LPS22HBが正常に起動しているかチェックする関数.戻り値Trueだと正常.
+    # LPS22HBが正常に起動しているかチェックする関数
     def test(self):
         buf = bytearray(1)
         self.i2c.readfrom_mem_into(self.address, LPS_WHO_AM_I, buf)
@@ -59,18 +56,22 @@ class LPS22HB:
     def read_pressure(self):
         status = self.i2c.readfrom_mem(self.address, LPS_STATUS, 1)
         if (status[0] & 0x01) == 0x01:  # Pressure data available(p44参照)
-            bytes_xl = self.readfrom_mem(self.address, LPS_PRESS_OUT_XL)
-            bytes_l = self.readfrom_mem(self.address, LPS_PRESS_OUT_L)
-            bytes_H = self.readfrom_mem(self.address, LPS_PRESS_OUT_H)
-            PRESS_DATA = ((bytes_xl[0] << 16)+(bytes_l << 8)+bytes_H)/4096.0
-        pressure = PRESS_DATA   #わざわざこうする必要ある？
+            bytes_h = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_H, 1)
+            bytes_l = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_L, 1)
+            bytes_xl = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_XL, 1)
+            int_h = int.from_bytes(bytes_h, 'big')
+            int_l = int.from_bytes(bytes_l, 'big')
+            int_xl = int.from_bytes(bytes_xl, 'big')
+            pressure = ((int_h << 16)+(int_l << 8)+(int_xl))/4096.0
         return pressure
 
     def read_temperature(self):
-        buf = [2]
-        if (self.readfrom(LPS_STATUS) & 0x02) == 0x02:   # Temperature data available(p44参照)
-            buf[0] = self.readfrom(LPS_TEMP_OUT_L)
-            buf[1] = self.readfrom(LPS_TEMP_OUT_H)
-            TEMP_DATA = ((buf[1] << 8)+buf[0])/100.0
+        status = self.i2c.readfrom_mem(self.address, LPS_STATUS, 1)
+        if (status[0] & 0x02) == 0x02:   # Temperature data available(p44参照)
+            bytes_h = self.i2c.readfrom_mem(self.address, LPS_TEMP_OUT_H, 1)
+            bytes_l = self.i2c.readfrom_mem(self.address, LPS_TEMP_OUT_L, 1)
+            int_h = int.from_bytes(bytes_h, 'big')
+            int_l = int.from_bytes(bytes_l, 'big')
+            TEMP_DATA = ((int_h << 8)+int_l)/100.0
         temperature = TEMP_DATA
         return temperature
