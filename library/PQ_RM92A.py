@@ -213,7 +213,8 @@ class RM92A():
             pass
 
     # Pico -> RM92 >>>>
-    def send(self, dst, tx_data, size):
+    def send(self, dst, send_data):
+        size = len(send_data)
         tx_buf = [0]*(size+6)
         tx_buf[0] = int('0x40')     # '@'
         tx_buf[1] = int('0x40')     # '@'    
@@ -221,7 +222,7 @@ class RM92A():
         tx_buf[3] = int((dst >> 8) & 0xff)
         tx_buf[4] = int((dst >> 0) & 0xff)
         for i in range(size):
-            tx_buf[i+5] = int(tx_data[i])
+            tx_buf[i+5] = int(send_data[i])
         tx_buf[size+5] = int('0xAA')
         self.rm.write(bytearray(tx_buf))
         return 0
