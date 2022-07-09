@@ -6,9 +6,9 @@ from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
+
 block_flug = False
-signal_timing = 1000
-irq_called_time = time.ticks_ms() 
+irq_called_time = time.ticks_ms()
 
 rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
 gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
@@ -18,10 +18,11 @@ rm = RM92A(rm_uart)
 #gps = GPS(gps_uart)
 lps = LPS22HB(i2c)
 
-p2 = Pin(2, Pin.IN) # irq用のピン
+p2 = Pin(2, Pin.IN)  # irq用のピン
 p2.init(p2.IN, p2.PULL_UP)
 
 # 定数
+signal_timing = 1000
 T_BURN = 3300
 T_SEP = 12200000
 T_HEATING = 9000
@@ -48,7 +49,7 @@ peak_count = 0
 
 press_index = 0
 press_buf = [0]*10
-pressure = prev_press = ground_press = tempareture = 0
+pressure = prev_press = ground_press = temperature = 0
 lat = lon = alt = 0
 
 landed = False
@@ -57,12 +58,65 @@ separated = False
 
 led = Pin(25, Pin.OUT)
 
-#lightsleep(15000)
+# lightsleep(15000)
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
 read_timer = Timer()
 downlink_timer = Timer()
+
+# 初期化
+
+
+def init():
+    global burning, detect_peak, flight_pin, sep_pin, phase, mission_timer_reset, init_mission_time, mission_time, mission_time_int, init_flight_time, flight_time, flight_time_int, init_sep_time, sep_time, pressure, temperature, lat, lon, alt, peak_count, apogee, separated, landed, press_index, press_buf, prev_press, ground_press, led, peak_detection_timer, read_timer, downlink_timer, temperature, block_flug, irq_called_time, gps_uart
+
+    block_flug = False
+    irq_called_time = time.ticks_ms()
+
+    rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
+    gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+    i2c = I2C(0, scl=Pin(21), sda=Pin(20))
+
+    p2 = Pin(2, Pin.IN)  # irq用のピン
+    p2.init(p2.IN, p2.PULL_UP)
+
+    rm = RM92A(rm_uart)
+    #gps = GPS(gps_uart)
+    lps = LPS22HB(i2c)
+    # 変数整理
+    burning = False
+    detect_peak = False
+    flight_pin = Pin(26, Pin.IN)
+    sep_pin = Pin(27, Pin.OUT)
+    sep_pin.value(0)
+    phase = 0
+    mission_timer_reset = 0
+    init_mission_time = ticks_ms()
+    mission_time = 0
+    mission_time_int = 0
+    init_flight_time = 0
+    flight_time = 0
+    flight_time_int = 0
+    init_sep_time = 0
+    sep_time = 0
+
+    peak_count = 0
+
+    press_index = 0
+    press_buf = [0]*10
+    pressure = prev_press = ground_press = tempareture = 0
+    lat = lon = alt = 0
+
+    landed = False
+    apogee = False
+    separated = False
+
+    led = Pin(25, Pin.OUT)
+    peak_detection_timer = Timer()
+    read_timer = Timer()
+    downlink_timer = Timer()
+
 
 def get_smoothed_press():
     global press_index, press_buf
@@ -74,10 +128,12 @@ def get_smoothed_press():
         for i in range(10):
             for j in range(10-i-1):
                 if press_buf[j] > press_buf[j+1]:   # 左のほうが大きい場合
-                    press_buf[j], press_buf[j+1] = press_buf[j+1], press_buf[j] # 前後入れ替え
+                    press_buf[j], press_buf[j+1] = press_buf[j +
+                                                             1], press_buf[j]  # 前後入れ替え
     press_median = (press_buf[4]+press_buf[5])/2
     # LPFはいらないかも
     return press_median
+
 
 def peak_detection(t):
     global prev_press, pressure
@@ -90,12 +146,13 @@ def peak_detection(t):
     if peak_count == 5:
         apogee = True
 
+
 def read():
     global phase
     global mission_time, mission_timer_reset, mission_time_int, init_mission_time, init_flight_time, flight_time_int, flight_time, sep_time, init_sep_time
     global pressure, temperature
     global lat, lon, alt
-    
+
     # 時間関係
     mission_time = ticks_ms() - init_mission_time
     mission_time_int = int(mission_time/1000)    # 小数点以下は切り捨て
@@ -108,7 +165,7 @@ def read():
         flight_time_int = int(flight_time/1000)
     if phase == 3:
         sep_time = ticks_ms() - init_sep_time
-    
+
     # センサーの値を取得
     pressure = get_smoothed_press()  # medianをとってくる
     #temperature = lps.getTemperature()
@@ -118,47 +175,48 @@ def read():
     #alt = gps.getAlt()
     lat = 32.2345
 
+
 def debug():
     print('------------------------------------------------------------------')
     print(phase, flight_pin.value(), sep_pin.value())
     print(mission_timer_reset, mission_time_int, flight_time_int, sep_time)
     print(pressure, temperature)
     print(lat, lon, alt)
-    
-    
+
+
 def downlink(t):
-    #debug()
+    # debug()
     global phase
     global flight_pin, sep_pin
     global burning, apogee, separated, landed
     global pressure, temperature, lat, lon, alt
     flags = 0
-    flags |= flight_pin.value() << 7 
+    flags |= flight_pin.value() << 7
     flags |= burning << 6
     flags |= apogee << 5
     flags |= separated << 4
     flags |= sep_pin.value() << 3
     flags |= landed << 2
     flags |= 0 << 1
-    flags |= 0 << 0 
-    
+    flags |= 0 << 0
+
     press_int = int(pressure*100)  # 下2桁までを繰り上げして型変換
     press_bits_A = press_int >> 16 & 0xff
-    press_bits_B = press_int >> 8  & 0xff
-    press_bits_C = press_int >> 0  & 0xff
+    press_bits_B = press_int >> 8 & 0xff
+    press_bits_C = press_int >> 0 & 0xff
 
-    temp_int = int(temperature) # 小数点以下は切り捨て
+    temp_int = int(temperature)  # 小数点以下は切り捨て
     temp_bits = temp_int >> 0 & 0xff
 
     lat_int = int(lat*10000)    # 下4桁までを繰り上げ
-    lat_bits_A = lat_int >> 16 & 0xff 
-    lat_bits_B = lat_int >> 8  & 0xff
-    lat_bits_C = lat_int >> 0  & 0xff
+    lat_bits_A = lat_int >> 16 & 0xff
+    lat_bits_B = lat_int >> 8 & 0xff
+    lat_bits_C = lat_int >> 0 & 0xff
     lon_int = int(lon*10000)    # 下4桁までを繰り上げ
-    lon_bits_A = lon_int >> 16 & 0xff 
-    lon_bits_B = lon_int >> 8  & 0xff
-    lon_bits_C = lon_int >> 0  & 0xff
-    
+    lon_bits_A = lon_int >> 16 & 0xff
+    lon_bits_B = lon_int >> 8 & 0xff
+    lon_bits_C = lon_int >> 0 & 0xff
+
     send_data = bytearray(16)
     send_data[0] = 0x24
     send_data[1] = mission_timer_reset
@@ -169,19 +227,21 @@ def downlink(t):
     send_data[6] = press_bits_A
     send_data[7] = press_bits_B
     send_data[8] = press_bits_C
-    send_data[9] = temp_bits 
+    send_data[9] = temp_bits
     send_data[10] = lat_bits_A
     send_data[11] = lat_bits_B
     send_data[12] = lat_bits_C
     send_data[13] = lon_bits_A
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
-    
+
     rm.send(0xFFFF, send_data)
     send_data = 0
-        
+
+
 downlink_timer.init(period=2000, callback=downlink)
-    
+
+
 def command_handler(p2):
     global block_irq
     global irq_called_time
@@ -201,7 +261,7 @@ def command_handler(p2):
         elif command == 49:   # 1 SAFETY->READY
             if phase == 0:
                 phase = 1
-                
+
         elif command == 50:   # 2 READY->FLIGHT
             if phase == 1:
                 phase = 2
@@ -209,17 +269,19 @@ def command_handler(p2):
         elif command == 51:   # 3 SEP
             if (burning == False & phase == 2):
                 phase = 3
-            
+
         elif command == 52:   # 4 EMERGENCY
-            if (phase >= 1 & phase <= 3): phase = 5
+            if (phase >= 1 & phase <= 3):
+                phase = 5
         elif command == 127:   # RESET
             print("reset?")
-            soft_reset()
+            init()
         irq_called_time = time.ticks_ms()
         block_irq = True
 
-irq_obj = p2.irq(handler=command_handler, trigger=(Pin.IRQ_FALLING | Pin.IRQ_RISING))
 
+irq_obj = p2.irq(handler=command_handler, trigger=(
+    Pin.IRQ_FALLING | Pin.IRQ_RISING))
 
 
 def main():
@@ -227,37 +289,38 @@ def main():
     global flight_pin, sep_pin
     global init_flight_time, init_sep_time
     global burning, apogee, separated, landed
-    
+
     while True:
         lightsleep(10)
         read()
-        
+
         if phase == 0:  # SAFETYモード
-            #print("SAFETY")
+            # print("SAFETY")
             lightsleep(100)
-            
+
         elif phase == 1:    # READYモード
-            #print("READY")
+            # print("READY")
             if flight_pin.value() == 1:
                 burning = True
                 init_flight_time = ticks_ms()
                 phase = 2
-                
+
         elif phase == 2:    # FLIGHTモード
-            #print("FLIGHT")
-            if (ticks_ms() - init_flight_time)> T_BURN:
+            # print("FLIGHT")
+            if (ticks_ms() - init_flight_time) > T_BURN:
                 if burning == True:
                     burning = False
-                    peak_detection_timer.init(period=100, callback=peak_detection)
+                    peak_detection_timer.init(
+                        period=100, callback=peak_detection)
             if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
                 peak_detection_timer.deinit()
 
         elif phase == 3:   # SEPモード
-            #print("SEP")
+            # print("SEP")
             sep_pin.value(1)
             lightsleep(100)
-            
+
             if not separated:
                 init_sep_time = ticks_ms()
                 separated = True
@@ -265,7 +328,7 @@ def main():
                 if (ticks_ms() - init_sep_time) > T_HEATING:
                     sep_pin.value(0)
                     phase = 4
-                    
+
         elif phase == 4:   # RECOVERY
             lightsleep(100)
 
@@ -275,10 +338,11 @@ def main():
                     landed = True
             else:
                 lightsleep(1000)
-            
+
         elif phase == 5:   # EMERGENCY
             sep_pin.value(0)
             lightsleep(1000)
+
 
 if __name__ == '__main__':
     main()
