@@ -1,4 +1,4 @@
-from machine import Pin, UART, I2C, reset, Timer, lightsleep
+from machine import Pin, UART, I2C, soft_reset, Timer, lightsleep
 from utime import ticks_ms
 import time
 
@@ -116,7 +116,7 @@ def read():
     #lat = gps.getLat()
     #lon = gps.getLon()
     #alt = gps.getAlt()
-    lat = 32.2345   #テスト
+    lat = 32.2345
 
 def debug():
     print('------------------------------------------------------------------')
@@ -127,7 +127,7 @@ def debug():
     
     
 def downlink(t):
-    debug()
+    #debug()
     global phase
     global flight_pin, sep_pin
     global burning, apogee, separated, landed
@@ -177,7 +177,6 @@ def downlink(t):
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
     
-    #print(send_data[2])
     rm.send(0xFFFF, send_data)
     send_data = 0
         
@@ -197,18 +196,25 @@ def command_handler(p2):
         command = rx_buf[0]
         print(command)
         if command == 48:     # 0 READY->SAFETY
-            if phase == 1: phase = 0
+            if phase == 1:
+                phase = 0
         elif command == 49:   # 1 SAFETY->READY
-            if phase == 0: phase = 1
+            if phase == 0:
+                phase = 1
+                
         elif command == 50:   # 2 READY->FLIGHT
-            if phase == 1: phase = 2
+            if phase == 1:
+                phase = 2
+
         elif command == 51:   # 3 SEP
-            if (burning == False & phase == 2): phase = 3
+            if (burning == False & phase == 2):
+                phase = 3
+            
         elif command == 52:   # 4 EMERGENCY
             if (phase >= 1 & phase <= 3): phase = 5
         elif command == 127:   # RESET
-            #reset()
             print("reset?")
+            soft_reset()
         irq_called_time = time.ticks_ms()
         block_irq = True
 
@@ -223,17 +229,22 @@ def main():
     global burning, apogee, separated, landed
     
     while True:
+        lightsleep(10)
         read()
+        
         if phase == 0:  # SAFETYモード
+            #print("SAFETY")
             lightsleep(100)
             
-        elif phase == 1:    # READYモード     
+        elif phase == 1:    # READYモード
+            #print("READY")
             if flight_pin.value() == 1:
                 burning = True
                 init_flight_time = ticks_ms()
                 phase = 2
                 
         elif phase == 2:    # FLIGHTモード
+            #print("FLIGHT")
             if (ticks_ms() - init_flight_time)> T_BURN:
                 if burning == True:
                     burning = False
@@ -241,9 +252,12 @@ def main():
             if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
                 peak_detection_timer.deinit()
-        
+
         elif phase == 3:   # SEPモード
+            #print("SEP")
             sep_pin.value(1)
+            lightsleep(100)
+            
             if not separated:
                 init_sep_time = ticks_ms()
                 separated = True
@@ -251,8 +265,10 @@ def main():
                 if (ticks_ms() - init_sep_time) > T_HEATING:
                     sep_pin.value(0)
                     phase = 4
-           
+                    
         elif phase == 4:   # RECOVERY
+            lightsleep(100)
+
             if not landed:
                 if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
                     #relay = 0
@@ -262,7 +278,6 @@ def main():
             
         elif phase == 5:   # EMERGENCY
             sep_pin.value(0)
-            print("EMERGENCY!!!!")
             lightsleep(1000)
 
 if __name__ == '__main__':
