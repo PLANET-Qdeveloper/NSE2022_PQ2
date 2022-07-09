@@ -6,18 +6,26 @@ from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
+block_flug = False
+signal_timing = 1000
+irq_called_time = time.ticks_ms() 
+
 rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
 gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
 
-rm = RM92A(rm_uart, 18)
+rm = RM92A(rm_uart)
 #gps = GPS(gps_uart)
 lps = LPS22HB(i2c)
 
+p2 = Pin(2, Pin.IN) # irq用のピン
+p2.init(p2.IN, p2.PULL_UP)
+
 # 定数
 T_BURN = 3300
-T_SEP = 12200
+T_SEP = 12200000
 T_HEATING = 9000
+T_RECOVERY = 300000
 
 # 変数整理
 burning = False
@@ -48,6 +56,8 @@ apogee = False
 separated = False
 
 led = Pin(25, Pin.OUT)
+
+#lightsleep(15000)
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
@@ -89,8 +99,9 @@ def read():
     # 時間関係
     mission_time = ticks_ms() - init_mission_time
     mission_time_int = int(mission_time/1000)    # 小数点以下は切り捨て
-    if mission_time_int > 10:
+    if mission_time_int > 180:
         init_mission_time = ticks_ms()
+        mission_time_int = 0
         mission_timer_reset += 1
     if phase == 2:
         flight_time = ticks_ms() - init_flight_time
@@ -105,11 +116,12 @@ def read():
     #lat = gps.getLat()
     #lon = gps.getLon()
     #alt = gps.getAlt()
+    lat = 32.2345   #テスト
 
 def debug():
     print('------------------------------------------------------------------')
     print(phase, flight_pin.value(), sep_pin.value())
-    print(mission_timer_reset, mission_time, flight_time, sep_time)
+    print(mission_timer_reset, mission_time_int, flight_time_int, sep_time)
     print(pressure, temperature)
     print(lat, lon, alt)
     
@@ -118,10 +130,8 @@ def downlink(t):
     debug()
     global phase
     global flight_pin, sep_pin
-    global mission_timer_reset, mission_time_int, flight_time_int 
     global burning, apogee, separated, landed
     global pressure, temperature, lat, lon, alt
-
     flags = 0
     flags |= flight_pin.value() << 7 
     flags |= burning << 6
@@ -150,7 +160,7 @@ def downlink(t):
     lon_bits_C = lon_int >> 0  & 0xff
     
     send_data = bytearray(16)
-    send_data[0] = 0x44   # Header
+    send_data[0] = 0x24
     send_data[1] = mission_timer_reset
     send_data[2] = mission_time_int
     send_data[3] = flight_time_int
@@ -167,23 +177,43 @@ def downlink(t):
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
     
+    #print(send_data[2])
     rm.send(0xFFFF, send_data)
+    send_data = 0
+        
+downlink_timer.init(period=2000, callback=downlink)
     
-downlink_timer.init(period=1000, callback=downlink)
-    
-def command_handler(command):
-    if command == 0xB0:     # READY->SAFETY
-        if phase == 1: phase = 0
-    elif command == 0xB1:   # SAFETY->READY
-        if phase == 0: phase = 1
-    elif command == 0xB2:   # READY->FLIGHT
-        if phase == 1: phase = 2
-    elif command == 0xB3:   # SEP
-        if (burning == False & phase == 2): phase = 3
-    elif command == 0xB4:   # EMERGENCY
-        if (phase >= 1 & phase <= 3): phase = 5
-    elif command == 0xB5:   # RESET
-        reset()
+def command_handler(p2):
+    global block_irq
+    global irq_called_time
+    global signal_timing
+    global phase
+    rx_buf = bytearray(4)
+    if (time.ticks_ms() - irq_called_time) > signal_timing:
+        block_irq = False
+    if not block_irq:
+        print("called")
+        rm_uart.readinto(rx_buf, 4)
+        command = rx_buf[0]
+        print(command)
+        if command == 48:     # 0 READY->SAFETY
+            if phase == 1: phase = 0
+        elif command == 49:   # 1 SAFETY->READY
+            if phase == 0: phase = 1
+        elif command == 50:   # 2 READY->FLIGHT
+            if phase == 1: phase = 2
+        elif command == 51:   # 3 SEP
+            if (burning == False & phase == 2): phase = 3
+        elif command == 52:   # 4 EMERGENCY
+            if (phase >= 1 & phase <= 3): phase = 5
+        elif command == 127:   # RESET
+            #reset()
+            print("reset?")
+        irq_called_time = time.ticks_ms()
+        block_irq = True
+
+irq_obj = p2.irq(handler=command_handler, trigger=(Pin.IRQ_FALLING | Pin.IRQ_RISING))
+
 
 
 def main():
@@ -194,22 +224,21 @@ def main():
     
     while True:
         read()
-        
         if phase == 0:  # SAFETYモード
-            phase = 1
+            lightsleep(100)
             
         elif phase == 1:    # READYモード     
             if flight_pin.value() == 1:
                 burning = True
                 init_flight_time = ticks_ms()
                 phase = 2
-        
+                
         elif phase == 2:    # FLIGHTモード
-            if flight_time > T_BURN:
+            if (ticks_ms() - init_flight_time)> T_BURN:
                 if burning == True:
                     burning = False
                     peak_detection_timer.init(period=100, callback=peak_detection)
-            if (not burning) and (apogee or (flight_time > T_SEP)):
+            if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
                 peak_detection_timer.deinit()
         
@@ -219,23 +248,22 @@ def main():
                 init_sep_time = ticks_ms()
                 separated = True
             else:
-                if sep_time > T_HEATING:
+                if (ticks_ms() - init_sep_time) > T_HEATING:
                     sep_pin.value(0)
                     phase = 4
            
         elif phase == 4:   # RECOVERY
             if not landed:
-                if (pressure > ground_press) or (flight_time > T_RECOVERY):
+                if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
                     #relay = 0
                     landed = True
             else:
                 lightsleep(1000)
             
-        else:   # EMERGENCY
+        elif phase == 5:   # EMERGENCY
             sep_pin.value(0)
             print("EMERGENCY!!!!")
             lightsleep(1000)
-        lightsleep(10)
 
 if __name__ == '__main__':
     main()
