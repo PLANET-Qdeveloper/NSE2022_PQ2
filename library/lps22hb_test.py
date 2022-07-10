@@ -12,4 +12,5 @@ while True:
     press = lps.read_pressure()
     temperature = lps.read_temperature()
     print("press:%f,  temperature:%f"%(press, temperature))
+
     lightsleep(500)
