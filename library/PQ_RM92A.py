@@ -8,8 +8,9 @@ import time
 # rm92a.send(tx_data)
 
 class RM92A():
-    def __init__(self, uart_num, baudrate, tx_pin, rx_pin):   # コンストラクタの宣言
-        self.rm = UART(uart_num, baudrate, Pin(tx_pin), Pin(rx_pin))    # self要る？
+    def __init__(self, rm_uart):   # コンストラクタの宣言
+        self.rm = rm_uart
+        #self.cmd_buf = bytearray(6)
 
     def set_and_begin(self, ch, panid, dst, unit_mode, power, bw, factor, dt_mode):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
@@ -23,7 +24,7 @@ class RM92A():
         #-----------
         self.rm.write(b"a\r\n")
         time.sleep(0.1)
-        self.rm.write(ch+"\r\n")
+        self.rm.write("{}\r\n".format(ch))
         time.sleep(0.1)
 
         #-----------
@@ -33,7 +34,7 @@ class RM92A():
         time.sleep(0.1)
         self.rm.write(b"1\r\n")
         time.sleep(0.1)
-        self.rm.write(panid+"\r\n")
+        self.rm.write("{}\r\n".format(panid))
         time.sleep(0.1)
 
         #-----------
@@ -41,15 +42,15 @@ class RM92A():
         #-----------
         self.rm.write(b"d\r\n")
         time.sleep(0.1)
-        self.rm.write(dst+"\r\n")
+        self.rm.write("{}\r\n".format(dst))
         time.sleep(0.1)
         
         #-----------
-        # set unit-mode
+        # set unit-mode 0:parent, 1:child
         #-----------
         self.rm.write(b"e\r\n")
         time.sleep(0.1)
-        self.rm.write(unit_mode+"\r\n")
+        self.rm.write("{}\r\n".format(unit_mode))
         time.sleep(0.1)
 
         #-----------
@@ -59,21 +60,21 @@ class RM92A():
         time.sleep(0.1)
         self.rm.write(b"1\r\n")
         time.sleep(0.1)
-        self.rm.write(power+"\r\n")
+        self.rm.write("{}\r\n".format(power))
         time.sleep(0.1)
 
         self.rm.write(b"g\r\n")
         time.sleep(0.1)
         self.rm.write(b"2\r\n")
         time.sleep(0.1)
-        self.rm.write(bw+"\r\n")
+        self.rm.write("{}\r\n".format(bw))
         time.sleep(0.1)
 
         self.rm.write(b"g\r\n")
         time.sleep(0.1)
         self.rm.write(b"3\r\n")
         time.sleep(0.1)
-        self.rm.write(factor+"\r\n")
+        self.rm.write("{}\r\n".format(factor))
         time.sleep(0.1)
 
         #-----------
@@ -81,7 +82,7 @@ class RM92A():
         #-----------
         self.rm.write(b"i\r\n")
         time.sleep(0.1)
-        self.rm.write(dt_mode+"\r\n")
+        self.rm.write("{}\r\n".format(dt_mode))
         time.sleep(0.1)
 
         #-----------
@@ -107,7 +108,8 @@ class RM92A():
         self.rm.write(b"x\r\n")
         time.sleep(0.1)
         self.rm.write(b"s\r\n")
-        return 0
+        print("complite")
+        return
 
     def begin(self):
         time.sleep(0.5) # RM92Aの起動待ち.不要かも.
@@ -137,15 +139,17 @@ class RM92A():
     def readData(self):
         return 0
 
+    # Pico -> RM92 >>>>
     def send(self, dst, tx_data, size):
-        tx_buf = [size+6]
+        tx_buf = [0]*(size+6)
         tx_buf[0] = "@"
         tx_buf[1] = "@"
-        tx_buf[2] = size
+        tx_buf[2] = "{}".format(size)
         tx_buf[3] = bin((dst >> 8) & 0xff)
         tx_buf[4] = bin((dst >> 0) & 0xff)
-        for i in range(size-1):
-            tx_buf[i+5] = tx_data[i]
-        tx_buf[size+5] = 0xAA
-        self.rm.write(tx_buf)
-        return 0
+        for i in range(size):
+            tx_buf[i+5] = "{}".format(tx_data[i])
+        tx_buf[size+5] = "{}".format(0xAA)
+        for i in range(size+6):
+            self.rm.write(tx_buf[i])
+            print(tx_buf[i])
