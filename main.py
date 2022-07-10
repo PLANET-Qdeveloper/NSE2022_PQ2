@@ -1,25 +1,37 @@
 from machine import Pin, UART, I2C, soft_reset, Timer, lightsleep
 from utime import ticks_ms
 import time
+import sdcard
 
 from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
-
-block_flug = False
-irq_called_time = time.ticks_ms()
-
-rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
-gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+# I2C通信
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
 
+# SPI通信
+cs = Pin(17, Pin.OUT)
+spi = SPI(0, baudrate=32000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+sd = sdcard.SDCard(spi, cs)
+os.mount(sd, '/sd')
+
+# UART通信
+rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
+gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+
+# インスタンス生成
 rm = RM92A(rm_uart)
 #gps = GPS(gps_uart)
 lps = LPS22HB(i2c)
 
 p2 = Pin(2, Pin.IN)  # irq用のピン
-p2.init(p2.IN, p2.PULL_UP)
+#p2.init(p2.IN, p2.PULL_UP)
+led = Pin(25, Pin.OUT)
+
+# Timerオブジェクト(周期処理用)
+peak_detection_timer = Timer()
+downlink_timer = Timer()
 
 # 定数
 signal_timing = 1000
@@ -27,9 +39,11 @@ T_BURN = 3300
 T_SEP = 12200000
 T_HEATING = 9000
 T_RECOVERY = 300000
+irq_called_time = time.ticks_ms()
 
 # 変数整理
 burning = False
+block_flug = False
 detect_peak = False
 flight_pin = Pin(26, Pin.IN)
 sep_pin = Pin(27, Pin.OUT)
@@ -44,31 +58,23 @@ flight_time = 0
 flight_time_int = 0
 init_sep_time = 0
 sep_time = 0
-
 peak_count = 0
-
 press_index = 0
 press_buf = [0]*10
 pressure = prev_press = ground_press = temperature = 0
 lat = lon = alt = 0
 
+# bool変数
 landed = False
 apogee = False
 separated = False
 
-led = Pin(25, Pin.OUT)
-
-# lightsleep(15000)
-
-# Timerオブジェクト(周期処理用)
-peak_detection_timer = Timer()
-read_timer = Timer()
-downlink_timer = Timer()
+# SDカードのファイル作成
+file = open('/sd/test.txt', 'w')
 
 # 初期化
-
-
 def init():
+    print("init")
     global burning, detect_peak, flight_pin, sep_pin, phase, mission_timer_reset, init_mission_time, mission_time, mission_time_int, init_flight_time, flight_time, flight_time_int, init_sep_time, sep_time, pressure, temperature, lat, lon, alt, peak_count, apogee, separated, landed, press_index, press_buf, prev_press, ground_press, led, peak_detection_timer, read_timer, downlink_timer, temperature, block_flug, irq_called_time, gps_uart
 
     block_flug = False
@@ -120,16 +126,14 @@ def init():
 
 def get_smoothed_press():
     global press_index, press_buf
-    #press_buf[press_index] = lps.read_pressure()
-    press_buf[press_index] = 1010
+    press_buf[press_index] = lps.read_pressure()
     press_index += 1
     if press_index == 9:
         press_index = 0
         for i in range(10):
             for j in range(10-i-1):
                 if press_buf[j] > press_buf[j+1]:   # 左のほうが大きい場合
-                    press_buf[j], press_buf[j+1] = press_buf[j +
-                                                             1], press_buf[j]  # 前後入れ替え
+                    press_buf[j], press_buf[j+1] = press_buf[j + 1], press_buf[j]  # 前後入れ替え
     press_median = (press_buf[4]+press_buf[5])/2
     # LPFはいらないかも
     return press_median
@@ -168,24 +172,23 @@ def read():
 
     # センサーの値を取得
     pressure = get_smoothed_press()  # medianをとってくる
-    #temperature = lps.getTemperature()
-    temperature = 28
+    temperature = lps.read_temperature()
     #lat = gps.getLat()
     #lon = gps.getLon()
     #alt = gps.getAlt()
-    lat = 32.2345
-
+    
 
 def debug():
     print('------------------------------------------------------------------')
-    print(phase, flight_pin.value(), sep_pin.value())
-    print(mission_timer_reset, mission_time_int, flight_time_int, sep_time)
-    print(pressure, temperature)
-    print(lat, lon, alt)
+    print(pressure, flight_pin.value(), sep_pin.value())
 
+def record():
+    file.write()
+    
+    file.close()
 
 def downlink(t):
-    # debug()
+    debug()
     global phase
     global flight_pin, sep_pin
     global burning, apogee, separated, landed
@@ -236,9 +239,7 @@ def downlink(t):
     send_data[15] = lon_bits_C
 
     rm.send(0xFFFF, send_data)
-    send_data = 0
-
-
+    
 downlink_timer.init(period=2000, callback=downlink)
 
 
@@ -261,15 +262,12 @@ def command_handler(p2):
         elif command == 49:   # 1 SAFETY->READY
             if phase == 0:
                 phase = 1
-
         elif command == 50:   # 2 READY->FLIGHT
             if phase == 1:
                 phase = 2
-
         elif command == 51:   # 3 SEP
             if (burning == False & phase == 2):
                 phase = 3
-
         elif command == 52:   # 4 EMERGENCY
             if (phase >= 1 & phase <= 3):
                 phase = 5
@@ -279,9 +277,7 @@ def command_handler(p2):
         irq_called_time = time.ticks_ms()
         block_irq = True
 
-
-irq_obj = p2.irq(handler=command_handler, trigger=(
-    Pin.IRQ_FALLING | Pin.IRQ_RISING))
+irq_obj = p2.irq(handler=command_handler, trigger=(Pin.IRQ_FALLING | Pin.IRQ_RISING))
 
 
 def main():
@@ -342,7 +338,6 @@ def main():
         elif phase == 5:   # EMERGENCY
             sep_pin.value(0)
             lightsleep(1000)
-
 
 if __name__ == '__main__':
     main()
