@@ -1,3 +1,4 @@
+from micropython import const
 from machine import Pin, UART, I2C, soft_reset, Timer, lightsleep
 from utime import ticks_ms
 import time
@@ -7,50 +8,54 @@ from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
-# I2C通信
+# I2C通信(LPS22HB)
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
 
-# SPI通信
+# SPI通信(SDcard)
 cs = Pin(17, Pin.OUT)
 spi = SPI(0, baudrate=32000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
 sd = sdcard.SDCard(spi, cs)
 os.mount(sd, '/sd')
 
-# UART通信
+# UART通信(RM92A, GPS)
 rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
 gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 
 # インスタンス生成
+lps = LPS22HB(i2c)
 rm = RM92A(rm_uart)
 #gps = GPS(gps_uart)
-lps = LPS22HB(i2c)
 
-p2 = Pin(2, Pin.IN)  # irq用のピン
-#p2.init(p2.IN, p2.PULL_UP)
+# ピンのインスタンス
+p2 = Pin(2, Pin.IN)  # irq用
 led = Pin(25, Pin.OUT)
+flight_pin = Pin(26, Pin.IN)
+sep_pin = Pin(27, Pin.OUT)
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
 downlink_timer = Timer()
 
-# 定数
-signal_timing = 1000
-T_BURN = 3300
-T_SEP = 12200000
-T_HEATING = 9000
-T_RECOVERY = 300000
-irq_called_time = time.ticks_ms()
+# 定数宣言
+SIGNAL_TIMING = const(1000)
+T_BURN = const(3300)
+T_SEP = const(12200000)
+T_HEATING = const(9000)
+T_RECOVERY = const(300000)
 
-# 変数整理
+# bool変数
 burning = False
 block_flug = False
 detect_peak = False
-flight_pin = Pin(26, Pin.IN)
-sep_pin = Pin(27, Pin.OUT)
-sep_pin.value(0)
+landed = False
+apogee = False
+separated = False
+
+# 変数整理
+init_mission_time = ticks_ms()
+irq_called_time = ticks_ms()
 phase = 0
 mission_timer_reset = 0
-init_mission_time = ticks_ms()
 mission_time = 0
 mission_time_int = 0
 init_flight_time = 0
@@ -63,11 +68,6 @@ press_index = 0
 press_buf = [0]*10
 pressure = prev_press = ground_press = temperature = 0
 lat = lon = alt = 0
-
-# bool変数
-landed = False
-apogee = False
-separated = False
 
 # SDカードのファイル作成
 file = open('/sd/test.txt', 'w')
