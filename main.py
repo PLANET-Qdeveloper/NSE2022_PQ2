@@ -1,4 +1,4 @@
-from machine import Pin, UART, I2C, soft_reset, Timer, lightsleep
+from machine import Pin, SPI, UART, I2C, soft_reset, Timer, lightsleep
 from utime import ticks_ms
 import time, os
 import sdcard
@@ -210,10 +210,10 @@ def read():
     #lon = gps.getLon()
     #alt = gps.getAlt()
 
-def record():
+def record(t):
     global file, init_sd_time
     file.write("%d,%f,%d,%f,"%(phase, mission_time, mission_timer_reset, flight_time))
-    file.write("%d,%d,%d,%d,%d,%d,"%(flight_pin, burning, apogee, sep_pin, separated,landed))
+    file.write("%d,%d,%d,%d,%d,%d,"%(flight_pin.value(), burning, apogee, sep_pin.value(), separated,landed))
     file.write("%f,%f,%f,%f,%f\r\n"%(pressure, temperature, lat, lon, alt))
     if (ticks_ms() - init_sd_time > 10000):    # 10秒ごとにclose()して保存する
         file.close()
@@ -223,10 +223,10 @@ record_timer.init(period=10, callback=record)
 
 def debug():
     print('------------------------------------------------------------------')
-    print(pressure, flight_pin.value(), sep_pin.value())
+    print(pressure, flight_pin.value(), phase)
 
 def downlink(t):
-    debug()
+    #debug()
     global phase
     global flight_pin, sep_pin
     global burning, apogee, separated, landed
@@ -341,8 +341,7 @@ def main():
             if (ticks_ms() - init_flight_time) > T_BURN:
                 if burning == True:
                     burning = False
-                    peak_detection_timer.init(
-                        period=100, callback=peak_detection)
+                    peak_detection_timer.init(period=100, callback=peak_detection)
             if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
                 peak_detection_timer.deinit()
