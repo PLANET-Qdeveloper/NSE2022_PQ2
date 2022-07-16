@@ -1,61 +1,76 @@
-from micropython import const
-from machine import Pin, UART, I2C, soft_reset, Timer, lightsleep
+from machine import Pin, SPI, UART, I2C, soft_reset, Timer, lightsleep
 from utime import ticks_ms
-import time
+import time, os
 import sdcard
 
 from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
-# I2C通信(LPS22HB)
+# I2C通信
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
 
-# SPI通信(SDcard)
+# SPI通信
 cs = Pin(17, Pin.OUT)
 spi = SPI(0, baudrate=32000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+lightsleep(100)
 sd = sdcard.SDCard(spi, cs)
 os.mount(sd, '/sd')
 
-# UART通信(RM92A, GPS)
+file_index = 1
+file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
+while True:
+    try:
+       file = open(file_name, 'r')
+    except OSError: # 新しい番号であればエラーに拾われる
+        file = open(file_name, 'w')
+        init_sd_time = ticks_ms()
+        break
+    if file:    # 同じ番号が存在する場合引っかかる
+        file.close()    # 一旦古いファイルなので閉じる
+        file_index += 1
+        file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
+
+file.write("phase,mission_time,mission_time_reset,flight_time,")
+file.write("flight_pin,burning,apogee,sep,separated,landed,")
+file.write("pressure,temperature,lat,lon,alt\r\n")
+
+# UART通信
 rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
 gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 
 # インスタンス生成
-lps = LPS22HB(i2c)
 rm = RM92A(rm_uart)
 #gps = GPS(gps_uart)
+#lps = LPS22HB(i2c)
 
-# ピンのインスタンス
-p2 = Pin(2, Pin.IN)  # irq用
+p2 = Pin(2, Pin.IN)  # irq用のピン
+#p2.init(p2.IN, p2.PULL_UP)
 led = Pin(25, Pin.OUT)
-flight_pin = Pin(26, Pin.IN)
-sep_pin = Pin(27, Pin.OUT)
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
+record_timer = Timer()
 downlink_timer = Timer()
 
-# 定数宣言
-SIGNAL_TIMING = const(1000)
-T_BURN = const(3300)
-T_SEP = const(12200000)
-T_HEATING = const(9000)
-T_RECOVERY = const(300000)
+# 定数
+signal_timing = 1000
+T_BURN = 3300
+T_SEP = 12200000
+T_HEATING = 9000
+T_RECOVERY = 300000
+irq_called_time = time.ticks_ms()
 
-# bool変数
+# 変数整理
 burning = False
 block_flug = False
 detect_peak = False
-landed = False
-apogee = False
-separated = False
-
-# 変数整理
-init_mission_time = ticks_ms()
-irq_called_time = ticks_ms()
+flight_pin = Pin(26, Pin.IN)
+sep_pin = Pin(27, Pin.OUT)
+sep_pin.value(0)
 phase = 0
 mission_timer_reset = 0
+init_mission_time = ticks_ms()
 mission_time = 0
 mission_time_int = 0
 init_flight_time = 0
@@ -69,14 +84,30 @@ press_buf = [0]*10
 pressure = prev_press = ground_press = temperature = 0
 lat = lon = alt = 0
 
-# SDカードのファイル作成
-file = open('/sd/test.txt', 'w')
+# bool変数
+landed = False
+apogee = False
+separated = False
 
 # 初期化
 def init():
     print("init")
     global burning, detect_peak, flight_pin, sep_pin, phase, mission_timer_reset, init_mission_time, mission_time, mission_time_int, init_flight_time, flight_time, flight_time_int, init_sep_time, sep_time, pressure, temperature, lat, lon, alt, peak_count, apogee, separated, landed, press_index, press_buf, prev_press, ground_press, led, peak_detection_timer, read_timer, downlink_timer, temperature, block_flug, irq_called_time, gps_uart
 
+    file_index = 1
+    file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
+    while True:
+        try:
+            file = open(file_name, 'r')
+        except OSError: # 新しい番号であればエラーに拾われる
+            print(file_index)
+            file = open(file_name, 'w')
+            break
+        if file:    # 同じ番号が存在する場合引っかかる
+            file.close()    # 一旦古いファイルなので閉じる
+            file_index += 1
+            file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
+    
     block_flug = False
     irq_called_time = time.ticks_ms()
 
@@ -89,7 +120,7 @@ def init():
 
     rm = RM92A(rm_uart)
     #gps = GPS(gps_uart)
-    lps = LPS22HB(i2c)
+    #lps = LPS22HB(i2c)
     # 変数整理
     burning = False
     detect_peak = False
@@ -126,16 +157,19 @@ def init():
 
 def get_smoothed_press():
     global press_index, press_buf
-    press_buf[press_index] = lps.read_pressure()
-    press_index += 1
-    if press_index == 9:
-        press_index = 0
-        for i in range(10):
-            for j in range(10-i-1):
-                if press_buf[j] > press_buf[j+1]:   # 左のほうが大きい場合
-                    press_buf[j], press_buf[j+1] = press_buf[j + 1], press_buf[j]  # 前後入れ替え
-    press_median = (press_buf[4]+press_buf[5])/2
-    # LPFはいらないかも
+    press_median = 0
+    press = lps.read_pressure()
+    if not press == None:
+        press_buf[press_index] = press
+        press_index += 1
+        if press_index == 9:
+            press_index = 0
+            for i in range(10):
+                for j in range(10-i-1):
+                    if press_buf[j] > press_buf[j+1]:   # 左のほうが大きい場合
+                        press_buf[j], press_buf[j+1] = press_buf[j + 1], press_buf[j]  # 前後入れ替え
+        press_median = (press_buf[4]+press_buf[5])/2
+        # LPFはいらないかも
     return press_median
 
 
@@ -171,28 +205,33 @@ def read():
         sep_time = ticks_ms() - init_sep_time
 
     # センサーの値を取得
-    pressure = get_smoothed_press()  # medianをとってくる
-    temperature = lps.read_temperature()
+    #pressure = get_smoothed_press()  # medianをとってくる
+    #temperature = lps.read_temperature()
     #lat = gps.getLat()
     #lon = gps.getLon()
     #alt = gps.getAlt()
-    
+
+def record(t):
+    global file, init_sd_time
+    file.write("%d,%f,%d,%f,"%(phase, mission_time, mission_timer_reset, flight_time))
+    file.write("%d,%d,%d,%d,%d,%d,"%(flight_pin.value(), burning, apogee, sep_pin.value(), separated,landed))
+    file.write("%f,%f,%f,%f,%f\r\n"%(pressure, temperature, lat, lon, alt))
+    if (ticks_ms() - init_sd_time > 10000):    # 10秒ごとにclose()して保存する
+        file.close()
+        file = open(file_name, "a")
+        init_sd_time = ticks_ms()
+record_timer.init(period=10, callback=record)
 
 def debug():
     print('------------------------------------------------------------------')
-    print(pressure, flight_pin.value(), sep_pin.value())
-
-def record():
-    file.write()
-    
-    file.close()
+    print(mission_time_int, flight_pin.value(), phase)
 
 def downlink(t):
-    debug()
     global phase
     global flight_pin, sep_pin
     global burning, apogee, separated, landed
     global pressure, temperature, lat, lon, alt
+    debug()
     flags = 0
     flags |= flight_pin.value() << 7
     flags |= burning << 6
@@ -237,17 +276,15 @@ def downlink(t):
     send_data[13] = lon_bits_A
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
-
     rm.send(0xFFFF, send_data)
-    
+    print(send_data)
 downlink_timer.init(period=2000, callback=downlink)
 
 
 def command_handler(p2):
-    global block_irq
-    global irq_called_time
+    global block_irq, irq_called_time
     global signal_timing
-    global phase
+    global phase, init_flight_time, burning
     rx_buf = bytearray(4)
     if (time.ticks_ms() - irq_called_time) > signal_timing:
         block_irq = False
@@ -265,8 +302,10 @@ def command_handler(p2):
         elif command == 50:   # 2 READY->FLIGHT
             if phase == 1:
                 phase = 2
+                burning = True
+                init_flight_time = ticks_ms()
         elif command == 51:   # 3 SEP
-            if (burning == False & phase == 2):
+            if phase == 2:
                 phase = 3
         elif command == 52:   # 4 EMERGENCY
             if (phase >= 1 & phase <= 3):
@@ -276,7 +315,6 @@ def command_handler(p2):
             init()
         irq_called_time = time.ticks_ms()
         block_irq = True
-
 irq_obj = p2.irq(handler=command_handler, trigger=(Pin.IRQ_FALLING | Pin.IRQ_RISING))
 
 
@@ -289,34 +327,28 @@ def main():
     while True:
         lightsleep(10)
         read()
-
         if phase == 0:  # SAFETYモード
             # print("SAFETY")
             lightsleep(100)
-
         elif phase == 1:    # READYモード
             # print("READY")
             if flight_pin.value() == 1:
                 burning = True
                 init_flight_time = ticks_ms()
                 phase = 2
-
         elif phase == 2:    # FLIGHTモード
             # print("FLIGHT")
             if (ticks_ms() - init_flight_time) > T_BURN:
                 if burning == True:
                     burning = False
-                    peak_detection_timer.init(
-                        period=100, callback=peak_detection)
+                    #peak_detection_timer.init(period=100, callback=peak_detection)
             if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
-                peak_detection_timer.deinit()
-
+                #peak_detection_timer.deinit()
         elif phase == 3:   # SEPモード
-            # print("SEP")
+            print("SEP")
             sep_pin.value(1)
             lightsleep(100)
-
             if not separated:
                 init_sep_time = ticks_ms()
                 separated = True
@@ -324,12 +356,12 @@ def main():
                 if (ticks_ms() - init_sep_time) > T_HEATING:
                     sep_pin.value(0)
                     phase = 4
-
         elif phase == 4:   # RECOVERY
             lightsleep(100)
 
             if not landed:
-                if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
+                if (ticks_ms() - init_flight_time) > T_RECOVERY:
+                #if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
                     #relay = 0
                     landed = True
             else:
