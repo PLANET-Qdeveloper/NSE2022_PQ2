@@ -1,22 +1,38 @@
-from machine import Pin, SPI, UART, I2C, soft_reset, Timer, lightsleep
+from machine import Pin, SPI, UART, I2C, Timer, lightsleep
 from utime import ticks_ms
 import time, os
 import sdcard
 
+# 自作ライブラリの読み込み
 from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 #from PQ_GPS import GPS
 
-# I2C通信
+# I2C通信(LPS22HB用)
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
 
-# SPI通信
+# SPI通信(SD用)
 cs = Pin(17, Pin.OUT)
 spi = SPI(0, baudrate=32000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
-lightsleep(100)
+
+# UART通信(RM92A, GPS用)
+rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
+gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+
+# インスタンス生成
+rm = RM92A(rm_uart)
+#gps = GPS(gps_uart)
+lps = LPS22HB(i2c)
+
+# ピンの設定
+flight_pin = Pin(26, Pin.IN)
+sep_pin = Pin(27, Pin.OUT)
+p2 = Pin(2, Pin.IN)  # irq用のピン
+led = Pin(25, Pin.OUT)
+
 sd = sdcard.SDCard(spi, cs)
 os.mount(sd, '/sd')
-
+# SDに保存するファイル名の連番処理
 file_index = 1
 file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
 while True:
@@ -26,27 +42,14 @@ while True:
         file = open(file_name, 'w')
         init_sd_time = ticks_ms()
         break
-    if file:    # 同じ番号が存在する場合引っかかる
+    if file:    # 同じ番号が存在する場合
         file.close()    # 一旦古いファイルなので閉じる
         file_index += 1
         file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
-
+# タイトル行
 file.write("phase,mission_time,mission_time_reset,flight_time,")
 file.write("flight_pin,burning,apogee,sep,separated,landed,")
-file.write("pressure,temperature,lat,lon,alt\r\n")
-
-# UART通信
-rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
-gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
-
-# インスタンス生成
-rm = RM92A(rm_uart)
-#gps = GPS(gps_uart)
-#lps = LPS22HB(i2c)
-
-p2 = Pin(2, Pin.IN)  # irq用のピン
-#p2.init(p2.IN, p2.PULL_UP)
-led = Pin(25, Pin.OUT)
+file.write("pressure,temperature,lat,lon,alt\r\n")  # \r\nは改行を意味する
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
@@ -56,17 +59,12 @@ downlink_timer = Timer()
 # 定数
 signal_timing = 1000
 T_BURN = 3300
-T_SEP = 20990
+T_SEP = 2099000
 T_HEATING = 9000
 T_RECOVERY = 300000
-irq_called_time = time.ticks_ms()
+irq_called_time = ticks_ms()
 
 # 変数整理
-burning = False
-block_flug = False
-detect_peak = False
-flight_pin = Pin(26, Pin.IN)
-sep_pin = Pin(27, Pin.OUT)
 sep_pin.value(0)
 phase = 0
 mission_timer_reset = 0
@@ -88,6 +86,9 @@ lat = lon = alt = 0
 landed = False
 apogee = False
 separated = False
+burning = False
+block_flug = False
+detect_peak = False
 
 # 初期化
 def init():
@@ -208,11 +209,14 @@ def get_smoothed_press():
 def peak_detection(t):
     global prev_press, pressure
     global peak_count, apogee
-    if pressure > prev_press:
-        peak_count += 1
+    if pressure == 0:
+        return
     else:
-        peak_count = 0
-    prev_press = pressure
+        if pressure > prev_press:
+            peak_count += 1
+        else:
+            peak_count = 0
+        prev_press = pressure
     if peak_count == 5:
         apogee = True
 
@@ -237,8 +241,8 @@ def read():
         sep_time = ticks_ms() - init_sep_time
 
     # センサーの値を取得
-    #pressure = get_smoothed_press()  # medianをとってくる
-    #temperature = lps.read_temperature()
+    pressure = lps.get_smoothed_press()  # medianをとってくる
+    temperature = lps.read_temperature()
     #lat = gps.getLat()
     #lon = gps.getLon()
     #alt = gps.getAlt()
@@ -390,12 +394,14 @@ def main():
                     phase = 4
         elif phase == 4:   # RECOVERY
             lightsleep(100)
-
             if not landed:
                 if (ticks_ms() - init_flight_time) > T_RECOVERY:
-                #if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
-                    #relay = 0
+                    return
+                '''
+                if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
+                    relay = 0
                     landed = True
+                '''
             else:
                 lightsleep(1000)
 
