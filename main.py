@@ -56,7 +56,7 @@ downlink_timer = Timer()
 # 定数
 signal_timing = 1000
 T_BURN = 3300
-T_SEP = 12200000
+T_SEP = 20990
 T_HEATING = 9000
 T_RECOVERY = 300000
 irq_called_time = time.ticks_ms()
@@ -91,9 +91,40 @@ separated = False
 
 # 初期化
 def init():
-    print("init")
     global burning, detect_peak, flight_pin, sep_pin, phase, mission_timer_reset, init_mission_time, mission_time, mission_time_int, init_flight_time, flight_time, flight_time_int, init_sep_time, sep_time, pressure, temperature, lat, lon, alt, peak_count, apogee, separated, landed, press_index, press_buf, prev_press, ground_press, led, peak_detection_timer, read_timer, downlink_timer, temperature, block_flug, irq_called_time, gps_uart
+    phase = 0
+    init_mission_time = ticks_ms()
+    init_flight_time = ticks_ms()
+    mission_time = 0
+    flight_time = 0
+    landed = False
+    separated = False
+    apogee = False
+    burning = False
+    block_flug = False
+    detect_peak = False
+    flight_pin = Pin(26, Pin.IN)
+    sep_pin = Pin(27, Pin.OUT)
+    sep_pin.value(0)
+    phase = 0
+    mission_timer_reset = 0
+    init_mission_time = ticks_ms()
+    mission_time = 0
+    mission_time_int = 0
+    init_flight_time = 0
+    flight_time = 0
+    flight_time_int = 0
+    init_sep_time = 0
+    sep_time = 0
+    peak_count = 0
+    press_index = 0
+    press_buf = [0]*10
+    pressure = prev_press = ground_press = temperature = 0
+    lat = lon = alt = 0
 
+    print("init")
+    
+    '''
     file_index = 1
     file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
     while True:
@@ -153,6 +184,7 @@ def init():
     peak_detection_timer = Timer()
     read_timer = Timer()
     downlink_timer = Timer()
+    '''
 
 
 def get_smoothed_press():
@@ -198,7 +230,7 @@ def read():
         init_mission_time = ticks_ms()
         mission_time_int = 0
         mission_timer_reset += 1
-    if phase == 2:
+    if (phase == 2) or (phase ==  3):
         flight_time = ticks_ms() - init_flight_time
         flight_time_int = int(flight_time/1000)
     if phase == 3:
@@ -346,7 +378,7 @@ def main():
                 phase = 3
                 #peak_detection_timer.deinit()
         elif phase == 3:   # SEPモード
-            print("SEP")
+            #print("SEP")
             sep_pin.value(1)
             lightsleep(100)
             if not separated:
