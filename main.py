@@ -6,7 +6,7 @@ import sdcard
 # 自作ライブラリの読み込み
 from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
-#from PQ_GPS import GPS
+from micropyGPS import MicropyGPS
 
 # I2C通信(LPS22HB用)
 i2c = I2C(0, scl=Pin(21), sda=Pin(20))
@@ -21,7 +21,7 @@ gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 
 # インスタンス生成
 rm = RM92A(rm_uart)
-#gps = GPS(gps_uart)
+gps = MicropyGPS()
 lps = LPS22HB(i2c)
 
 # ピンの設定
@@ -42,7 +42,7 @@ while True:
         file = open(file_name, 'w')
         init_sd_time = ticks_ms()
         break
-    if file:    # 同じ番号が存在する場合
+    if file:    # 同じ番号が存在する場合引っかかる
         file.close()    # 一旦古いファイルなので閉じる
         file_index += 1
         file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
@@ -55,6 +55,7 @@ file.write("pressure,temperature,lat,lon,alt\r\n")  # \r\nは改行を意味す�
 peak_detection_timer = Timer()
 record_timer = Timer()
 downlink_timer = Timer()
+gps_timer = Timer()
 
 # 定数
 signal_timing = 1000
@@ -87,8 +88,6 @@ landed = False
 apogee = False
 separated = False
 burning = False
-block_flug = False
-detect_peak = False
 
 # 初期化
 def init():
@@ -187,6 +186,19 @@ def init():
     downlink_timer = Timer()
     '''
 
+def get_gps(t):
+    global lat, lon, alt
+    len = gps_uart.any()
+    if len > 0:
+        b = gps_uart.read(len)
+        for x in b:
+            if 10 <= x <=126:
+                status = gps.update(chr(x))
+                if status:
+                    lat = gps.latitude[0] + gps.latitude[1]/60
+                    lon = gps.longitude[0] + gps.longitude[1]/60
+
+gps_timer.init(period=2000, callback=get_gps)
 
 def get_smoothed_press():
     global press_index, press_buf
@@ -241,11 +253,8 @@ def read():
         sep_time = ticks_ms() - init_sep_time
 
     # センサーの値を取得
-    pressure = lps.get_smoothed_press()  # medianをとってくる
+    pressure = get_smoothed_press()  # medianをとってくる
     temperature = lps.read_temperature()
-    #lat = gps.getLat()
-    #lon = gps.getLon()
-    #alt = gps.getAlt()
 
 def record(t):
     global file, init_sd_time
@@ -260,7 +269,7 @@ record_timer.init(period=10, callback=record)
 
 def debug():
     print('------------------------------------------------------------------')
-    print(mission_time_int, flight_pin.value(), phase)
+    print(mission_time_int, flight_pin.value(), phase, pressure, lon, lat)
 
 def downlink(t):
     global phase
@@ -313,7 +322,6 @@ def downlink(t):
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
     rm.send(0xFFFF, send_data)
-    print(send_data)
 downlink_timer.init(period=2000, callback=downlink)
 
 
@@ -377,10 +385,10 @@ def main():
             if (ticks_ms() - init_flight_time) > T_BURN:
                 if burning == True:
                     burning = False
-                    #peak_detection_timer.init(period=100, callback=peak_detection)
+                    peak_detection_timer.init(period=100, callback=peak_detection)
             if (not burning) and (apogee or ((ticks_ms() - init_flight_time) > T_SEP)):
                 phase = 3
-                #peak_detection_timer.deinit()
+                peak_detection_timer.deinit()
         elif phase == 3:   # SEPモード
             #print("SEP")
             sep_pin.value(1)
