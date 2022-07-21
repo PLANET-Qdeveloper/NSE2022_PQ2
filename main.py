@@ -93,38 +93,35 @@ burning = False
 def init():
     global burning, detect_peak, flight_pin, sep_pin, phase, mission_timer_reset, init_mission_time, mission_time, mission_time_int, init_flight_time, flight_time, flight_time_int, init_sep_time, sep_time, pressure, temperature, lat, lon, alt, peak_count, apogee, separated, landed, press_index, press_buf, prev_press, ground_press, led, peak_detection_timer, read_timer, downlink_timer, temperature, block_flug, irq_called_time, gps_uart
     phase = 0
+    
+    # ミッション時間系
     init_mission_time = ticks_ms()
     init_flight_time = ticks_ms()
     mission_time = 0
+    flight_time_int = 0
+    init_sep_time = 0
+    sep_time = 0
     flight_time = 0
+    mission_timer_reset = 0
+    mission_time_int = 0
+    init_flight_time = 0
+    
+    # bool変数
     landed = False
     separated = False
     apogee = False
     burning = False
     block_flug = False
     detect_peak = False
-    flight_pin = Pin(26, Pin.IN)
-    sep_pin = Pin(27, Pin.OUT)
+    
     sep_pin.value(0)
-    phase = 0
-    mission_timer_reset = 0
-    init_mission_time = ticks_ms()
-    mission_time = 0
-    mission_time_int = 0
-    init_flight_time = 0
-    flight_time = 0
-    flight_time_int = 0
-    init_sep_time = 0
-    sep_time = 0
+    
     peak_count = 0
     press_index = 0
     press_buf = [0]*10
     pressure = prev_press = ground_press = temperature = 0
     lat = lon = alt = 0
 
-    print("init")
-    
-    '''
     file_index = 1
     file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
     while True:
@@ -138,53 +135,6 @@ def init():
             file.close()    # 一旦古いファイルなので閉じる
             file_index += 1
             file_name = '/sd/PQ2_AVIONICS'+str(file_index)+'.txt'
-    
-    block_flug = False
-    irq_called_time = time.ticks_ms()
-
-    rm_uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
-    gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
-    i2c = I2C(0, scl=Pin(21), sda=Pin(20))
-
-    p2 = Pin(2, Pin.IN)  # irq用のピン
-    p2.init(p2.IN, p2.PULL_UP)
-
-    rm = RM92A(rm_uart)
-    #gps = GPS(gps_uart)
-    #lps = LPS22HB(i2c)
-    # 変数整理
-    burning = False
-    detect_peak = False
-    flight_pin = Pin(26, Pin.IN)
-    sep_pin = Pin(27, Pin.OUT)
-    sep_pin.value(0)
-    phase = 0
-    mission_timer_reset = 0
-    init_mission_time = ticks_ms()
-    mission_time = 0
-    mission_time_int = 0
-    init_flight_time = 0
-    flight_time = 0
-    flight_time_int = 0
-    init_sep_time = 0
-    sep_time = 0
-
-    peak_count = 0
-
-    press_index = 0
-    press_buf = [0]*10
-    pressure = prev_press = ground_press = tempareture = 0
-    lat = lon = alt = 0
-
-    landed = False
-    apogee = False
-    separated = False
-
-    led = Pin(25, Pin.OUT)
-    peak_detection_timer = Timer()
-    read_timer = Timer()
-    downlink_timer = Timer()
-    '''
 
 def get_gps(t):
     global lat, lon, alt
@@ -321,14 +271,14 @@ def downlink(t):
     send_data[13] = lon_bits_A
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
+
     rm.send(0xFFFF, send_data)
+
 downlink_timer.init(period=2000, callback=downlink)
 
 
 def command_handler(p2):
-    global block_irq, irq_called_time
-    global signal_timing
-    global phase, init_flight_time, burning
+    global block_irq, irq_called_time, phase, init_flight_time, burning
     rx_buf = bytearray(4)
     if (time.ticks_ms() - irq_called_time) > signal_timing:
         block_irq = False
@@ -355,18 +305,15 @@ def command_handler(p2):
             if (phase >= 1 & phase <= 3):
                 phase = 5
         elif command == 127:   # RESET
-            print("reset?")
             init()
-        irq_called_time = time.ticks_ms()
+        irq_called_time = ticks_ms()
         block_irq = True
 irq_obj = p2.irq(handler=command_handler, trigger=(Pin.IRQ_FALLING | Pin.IRQ_RISING))
 
 
 def main():
-    global phase
-    global flight_pin, sep_pin
-    global init_flight_time, init_sep_time
-    global burning, apogee, separated, landed
+    global phase, sep_pin, init_flight_time, init_sep_time
+    global burning, separated, landed
 
     while True:
         lightsleep(10)
