@@ -147,7 +147,7 @@ def get_gps(t):
                 if status:
                     lat = gps.latitude[0] + gps.latitude[1]/60
                     lon = gps.longitude[0] + gps.longitude[1]/60
-
+                    alt = gps.altitude
 gps_timer.init(period=2000, callback=get_gps)
 
 def get_smoothed_press():
