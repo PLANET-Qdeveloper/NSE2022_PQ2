@@ -29,6 +29,9 @@ flight_pin = Pin(26, Pin.IN)
 sep_pin = Pin(27, Pin.OUT)
 p2 = Pin(2, Pin.IN)  # irq用のピン
 led = Pin(25, Pin.OUT)
+lps_gnd_pin = Pin(22, Pin.OUT)
+
+lps_gnd_pin.value(1)
 
 sd = sdcard.SDCard(spi, cs)
 os.mount(sd, '/sd')
@@ -219,7 +222,7 @@ record_timer.init(period=10, callback=record)
 
 def debug():
     print('------------------------------------------------------------------')
-    print(mission_time_int, flight_pin.value(), phase, pressure, lon, lat)
+    print(mission_time_int, flight_pin.value(), phase, pressure, lon, lat, alt)
 
 def downlink(t):
     global phase
