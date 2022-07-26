@@ -9,6 +9,11 @@ from PQ_LPS22HB import LPS22HB
 from PQ_RM92 import RM92A
 from micropyGPS import MicropyGPS
 
+# ピンの設定
+flight_pin = Pin(26, Pin.IN)
+sep_pin = Pin(27, Pin.OUT)
+p2 = Pin(2, Pin.IN)  # irq用のピン
+led = Pin(25, Pin.OUT)
 lps_gnd_pin = Pin(22, Pin.OUT)
 
 lps_gnd_pin.value(1)
@@ -27,13 +32,6 @@ gps_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 # インスタンス生成
 rm = RM92A(rm_uart)
 gps = MicropyGPS()
-
-# ピンの設定
-flight_pin = Pin(26, Pin.IN)
-sep_pin = Pin(27, Pin.OUT)
-p2 = Pin(2, Pin.IN)  # irq用のピン
-led = Pin(25, Pin.OUT)
-
 
 # Timerオブジェクト(周期処理用)
 peak_detection_timer = Timer()
@@ -282,7 +280,6 @@ def downlink(t):
     send_data[13] = lon_bits_A
     send_data[14] = lon_bits_B
     send_data[15] = lon_bits_C
-
     rm.send(0xFFFF, send_data)
 
 downlink_timer.init(period=2000, callback=downlink)
@@ -291,13 +288,11 @@ downlink_timer.init(period=2000, callback=downlink)
 def command_handler(p2):
     global block_irq, irq_called_time, phase, init_flight_time, burning
     rx_buf = bytearray(4)
-    if (time.ticks_ms() - irq_called_time) > signal_timing:
+    if (ticks_ms() - irq_called_time) > signal_timing:
         block_irq = False
     if not block_irq:
-        print("called")
         rm_uart.readinto(rx_buf, 4)
         command = rx_buf[0]
-        print(command)
         if command == 48:     # 0 READY->SAFETY
             if phase == 1:
                 phase = 0
@@ -310,7 +305,7 @@ def command_handler(p2):
                 burning = True
                 init_flight_time = ticks_ms()
         elif command == 51:   # 3 SEP
-            if phase == 2:
+            if (phase == 2) and (mission_time > T_SEP) and (mission_time < (T_SEP + 3000)):
                 phase = 3
         elif command == 52:   # 4 EMERGENCY
             if (phase >= 1 & phase <= 3):
@@ -336,10 +331,9 @@ def main():
                 init_flight_time = ticks_ms()
                 phase = 2
         elif phase == 2:    # FLIGHTモード
-            if (ticks_ms() - init_flight_time) > T_BURN:
-                if burning == True:
-                    burning = False
-                    peak_detection_timer.init(period=100, callback=peak_detection)
+            if ((ticks_ms() - init_flight_time) > T_BURN) and burning == True:
+                burning = False
+                peak_detection_timer.init(period=100, callback=peak_detection)
             if (not burning) and apogee:
                 phase = 3
                 peak_detection_timer.deinit()
@@ -357,7 +351,8 @@ def main():
             lightsleep(10)
             if not landed:
                 if (ticks_ms() - init_flight_time) > T_RECOVERY:
-                    return
+                    landed = True
+                    lps_gnd_pin.value(0)
                 '''
                 if (pressure > ground_press) or ((ticks_ms() - init_flight_time) > T_RECOVERY):
                     relay = 0
