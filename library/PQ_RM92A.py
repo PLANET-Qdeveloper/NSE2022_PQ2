@@ -197,7 +197,6 @@ class RM92A():
                 print('any data')
                 data = self.rm.read(1)   # 一文字ずつ読む
                 self.rx_buf[self.rx_write_p] = data
-                print(data)
                 if data == "\n":
                     self.rx_write_p = 0
                     self.rx_read_lock = True
@@ -210,10 +209,8 @@ class RM92A():
         lock = self.rx_update()
         if lock:
             self.rx_read_lock = False
-            print('rx_buf full')
             return self.rx_buf
         else:   # データが溜まってないのでスルー
-            print('not full')
             pass
 
     # Pico -> RM92 >>>>

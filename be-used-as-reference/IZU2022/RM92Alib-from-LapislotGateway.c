@@ -7,7 +7,6 @@
 
 #include "libdebug.h"
 
-
 #define DEBUG_LORA
 
 static unsigned char lora_rx_buf[256];
@@ -19,7 +18,6 @@ static char rm92a_tx_buf[16];
 
 static t_RM92A_CONFIG rm92a_config;
 static HardwareSerial* rm92a_port;
-
 
 #define RESET_MSG				"Transmit RF Mode FSK or LORA?  [1:LORA  2:FSK]"
 #define RESET_DELIMITER			"=\r\n"
