@@ -1,13 +1,13 @@
-#!/usr/bin/python
-# -*- coding:utf-8 -*-
-import time
-import smbus
+from machine import I2C
+import utime
+import sys
 
-# i2c address
-LPS22HB_I2C_ADDRESS = 0x5C
+# LPS22HBのアドレス設定(AD0ピン)はGND接続でお願い
+LPS_I2C_ADDR = 92 #0x5C
+# もしAD0が+Vに接続しているときはコッチ
+# LPS_I2C_ADDR = 93 #0x5D
 
-LPS_ID = 0xB1
-# Register
+# LPS22HBのレジスタ
 LPS_INT_CFG = 0x0B  # Interrupt register
 LPS_THS_P_L = 0x0C  # Pressure threshold registers
 LPS_THS_P_H = 0x0D
@@ -32,80 +32,37 @@ LPS_TEMP_OUT_L = 0x2B  # 温度データが入るレジスタ
 LPS_TEMP_OUT_H = 0x2C
 LPS_RES = 0x33  # Filter reset register
 
+class LPS22HB:
+    def __init__(self, i2c):
+        self.address = LPS_I2C_ADDR
+        if i2c is None:
+            raise ValueError('An I2C object is required.')
+        self.i2c = i2c
+        buf = bytearray(1)
+        buf[0] = 0x40
+        # 出力データのレート(ODR)を50Hzに設定(p36参照)
+        self.i2c.writeto_mem(self.address, LPS_CTRL_REG1, buf)    
 
-class LPS22HB(object):
-    def __init__(self, address=LPS22HB_I2C_ADDRESS):
-        self._address = address
-        self._bus = smbus.SMBus(1)
-        self.LPS22HB_RESET()  # Wait for reset to complete
-        # Low-pass filter disabled , output registers not updated until MSB and LSB have been read , Enable Block Data Update , Set Output Data Rate to 0
-        self._write_byte(LPS_CTRL_REG1, 0x02)
+    def read_pressure(self):
+        status = self.i2c.readfrom_mem(self.address, 0x27, 1)
+        if (status[0] & 0x01) == 0x01:  # Pressure data available(p44参照)
+            bytes_h = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_H, 1)
+            bytes_l = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_L, 1)
+            bytes_xl = self.i2c.readfrom_mem(self.address, LPS_PRESS_OUT_XL, 1)
 
-    def LPS22HB_RESET(self):
-        Buf = self._read_u16(LPS_CTRL_REG2)
-        Buf |= 0x04
-        self._write_byte(LPS_CTRL_REG2, Buf)  # SWRESET Set 1
-        while Buf:
-            Buf = self._read_u16(LPS_CTRL_REG2)
-            Buf &= 0x04
+            int_h = int.from_bytes(bytes_h, 'big')
+            int_l = int.from_bytes(bytes_l, 'big')
+            int_xl = int.from_bytes(bytes_xl, 'big')
+            pressure = ((int_h << 16)+(int_l << 8)+(int_xl))/4096.0
+            return pressure
 
-    def LPS22HB_START_ONESHOT(self):
-        Buf = self._read_u16(LPS_CTRL_REG2)
-        Buf |= 0x01  # ONE_SHOT Set 1
-        self._write_byte(LPS_CTRL_REG2, Buf)
-
-    def _read_byte(self, cmd):
-        return self._bus.read_byte_data(self._address, cmd)
-
-    def _read_u16(self, cmd):
-        LSB = self._bus.read_byte_data(self._address, cmd)
-        MSB = self._bus.read_byte_data(self._address, cmd+1)
-        return (MSB << 8) + LSB
-
-    def _write_byte(self, cmd, val):
-        self._bus.write_byte_data(self._address, cmd, val)
-
-
-def main():
-    PRESS_DATA = 0.0
-    TEMP_DATA = 0.0
-    u8Buf = [0, 0, 0]
-    print("\nPressure Sensor Test Program ...\n")
-    lps22hb = LPS22HB()
-    lps22hb.LPS22HB_START_ONESHOT()
-    if (lps22hb._read_byte(LPS_STATUS) & 0x01) == 0x01:  # a new pressure data is generated
-        u8Buf[0] = lps22hb._read_byte(LPS_PRESS_OUT_XL)
-        u8Buf[1] = lps22hb._read_byte(LPS_PRESS_OUT_L)
-        u8Buf[2] = lps22hb._read_byte(LPS_PRESS_OUT_H)
-        PRESS_DATA = ((u8Buf[2] << 16)+(u8Buf[1] << 8)+u8Buf[0])/4096.0
-    if (lps22hb._read_byte(LPS_STATUS) & 0x02) == 0x02:   # a new pressure data is generated
-        u8Buf[0] = lps22hb._read_byte(LPS_TEMP_OUT_L)
-        u8Buf[1] = lps22hb._read_byte(LPS_TEMP_OUT_H)
-        TEMP_DATA = ((u8Buf[1] << 8)+u8Buf[0])/100.0
-    print('Pressure = %6.2f hPa , Temperature = %6.2f °C\r\n' %
-            (PRESS_DATA, TEMP_DATA))
-
-
-def getPressure():
-    PRESS_DATA = 0.0
-    TEMP_DATA = 0.0
-    u8Buf = [0, 0, 0]
-    # print("\nPressure Sensor Test Program ...\n")
-    lps22hb = LPS22HB()
-    lps22hb.LPS22HB_START_ONESHOT()
-    if (lps22hb._read_byte(LPS_STATUS) & 0x01) == 0x01:  # a new pressure data is generated
-        u8Buf[0] = lps22hb._read_byte(LPS_PRESS_OUT_XL)
-        u8Buf[1] = lps22hb._read_byte(LPS_PRESS_OUT_L)
-        u8Buf[2] = lps22hb._read_byte(LPS_PRESS_OUT_H)
-        PRESS_DATA = ((u8Buf[2] << 16)+(u8Buf[1] << 8)+u8Buf[0])/4096.0
-    if (lps22hb._read_byte(LPS_STATUS) & 0x02) == 0x02:   # a new pressure data is generated
-        u8Buf[0] = lps22hb._read_byte(LPS_TEMP_OUT_L)
-        u8Buf[1] = lps22hb._read_byte(LPS_TEMP_OUT_H)
-        TEMP_DATA = ((u8Buf[1] << 8)+u8Buf[0])/100.0
-    pressure = PRESS_DATA
-    # print(pressure)
-    return pressure
-
-
-if __name__ == '__main__':
-    main()
+    def read_temperature(self):
+        status = self.i2c.readfrom_mem(self.address, 0x27, 1)
+        if (status[0] & 0x02) == 0x02:   # Temperature data available(p44参照)
+            bytes_h = self.i2c.readfrom_mem(self.address, LPS_TEMP_OUT_H, 1)
+            bytes_l = self.i2c.readfrom_mem(self.address, LPS_TEMP_OUT_L, 1)
+            int_h = int.from_bytes(bytes_h, 'big')
+            int_l = int.from_bytes(bytes_l, 'big')
+            TEMP_DATA = ((int_h << 8)+int_l)/100.0
+            temperature = TEMP_DATA
+            return temperature

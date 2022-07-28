@@ -194,6 +194,7 @@ class RM92A():
     def rx_update(self):
         if self.rx_read_lock == False:
             while self.rm.any()>0:
+                print('any data')
                 data = self.rm.read(1)   # 一文字ずつ読む
                 self.rx_buf[self.rx_write_p] = data
                 if data == "\n":
