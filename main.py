@@ -334,7 +334,7 @@ try:
                     init_flight_time = ticks_ms()
                     phase = 2
             elif phase == 2:    # FLIGHTモード
-                if (flight_time > T_SEP) and (flight_time < (T_SEP + 5000)):
+                if (flight_time > T_SEP) and (flight_time < (T_SEP + 8000)):
                      sep_NG = False
                 else:
                      sep_NG = True
