@@ -1,6 +1,7 @@
 from math import fabs
 from machine import UART, Pin
 import time
+import binascii
 
 # 使い方
 # import PQ_RM92A
@@ -9,9 +10,9 @@ import time
 # rm92a.send(tx_data)
 
 class RM92A():
-    def __init__(self, rm_uart, rx_data_size):   # コンストラクタの宣言
+    def __init__(self, rm_uart):   # コンストラクタの宣言
         self.rm = rm_uart
-        self.rx_buf = [0]*(rx_data_size+6)
+        #self.rx_buf = [0]*(rx_data_size+6)
         self.rx_read_lock = False
         self.rx_write_p = 0
         #self.cmd_buf = bytearray(6)
@@ -203,8 +204,7 @@ class RM92A():
                     self.rx_write_p =+ 1
         return self.rx_read_lock
 
-    # 可能な限り回す関数．
-    def readData(self):
+    def read_data(self):
         lock = self.rx_update()
         if lock:
             self.rx_read_lock = False
@@ -213,8 +213,8 @@ class RM92A():
             pass
 
     # Pico -> RM92 >>>>
-    def send(self, dst, send_data):
-        size = len(send_data)
+    def send(self, dst, tx_data):
+        size = len(tx_data)
         tx_buf = [0]*(size+6)
         tx_buf[0] = int('0x40')     # '@'
         tx_buf[1] = int('0x40')     # '@'    
@@ -222,7 +222,6 @@ class RM92A():
         tx_buf[3] = int((dst >> 8) & 0xff)
         tx_buf[4] = int((dst >> 0) & 0xff)
         for i in range(size):
-            tx_buf[i+5] = int(send_data[i])
+            tx_buf[i+5] = int(tx_data[i])
         tx_buf[size+5] = int('0xAA')
         self.rm.write(bytearray(tx_buf))
-        return 0
